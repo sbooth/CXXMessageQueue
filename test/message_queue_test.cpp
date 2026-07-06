@@ -28,7 +28,7 @@ constexpr std::size_t GB = 1024 * MB;
 
 class MessageQueueTest : public ::testing::Test {
   protected:
-    mpsc::MessageQueue<1024> q;
+    mpsc::MessageQueue<32, 512> q;
 };
 
 } // namespace
@@ -38,9 +38,9 @@ TEST_F(MessageQueueTest, Empty) {
     EXPECT_EQ(q.emptySlots(), 0);
     EXPECT_EQ(q.occupiedSlots(), 0);
 
-    std::array<unsigned char, 1024> a;
+    std::array<unsigned char, 512> a;
     std::size_t sz;
-    EXPECT_EQ(q.read(a, sz), false);
+    EXPECT_EQ(q.dequeue(a, sz), false);
     EXPECT_EQ(sz, 0);
-    EXPECT_EQ(q.write(a), false);
+    EXPECT_EQ(q.enqueue(a), false);
 }

@@ -340,8 +340,9 @@ inline bool MessageQueue<N, C>::enqueueValues(const Args &...args) noexcept {
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline bool MessageQueue<N, C>::dequeue(std::span<unsigned char> buffer, SizeType &written) noexcept {
+    written = 0;
+
     if (buffer.empty() || buffer.size() < C) [[unlikely]] {
-        written = 0;
         return false;
     }
 

@@ -59,16 +59,8 @@ class MessageQueue final {
 
     MessageQueue(const MessageQueue &) = delete;
     MessageQueue &operator=(const MessageQueue &) = delete;
-
-    /// Creates a message queue by moving the contents of another message queue.
-    /// @note This method is not thread safe for the message queue being moved.
-    /// @param other The message queue to move.
-    MessageQueue(MessageQueue &&other) noexcept;
-
-    /// Moves the contents of another message queue into this message queue.
-    /// @note This method is not thread safe.
-    /// @param other The message queue to move.
-    MessageQueue &operator=(MessageQueue &&other) noexcept;
+    MessageQueue(MessageQueue &&) noexcept = delete;
+    MessageQueue &operator=(MessageQueue &&) noexcept = delete;
 
     /// Destroys the message queue and releases all associated resources.
     ~MessageQueue() noexcept = default;
@@ -262,26 +254,6 @@ constexpr MessageQueue<N, C>::MessageQueue() noexcept {
     for (SizeType i = 0; i < N; ++i) {
         slots_[i].generation_ = i;
     }
-}
-
-template <std::size_t N, std::size_t C>
-    requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline MessageQueue<N, C>::MessageQueue(MessageQueue &&other) noexcept
-    : writePosition_{other.writePosition_.exchange(0, std::memory_order_relaxed)},
-      readPosition_{other.readPosition_.exchange(0, std::memory_order_relaxed)} {
-    std::memcpy(slots_, other.slots_, N * C);
-}
-
-template <std::size_t N, std::size_t C>
-    requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline auto MessageQueue<N, C>::operator=(MessageQueue &&other) noexcept -> MessageQueue & {
-    if (this != &other) [[likely]] {
-        std::memcpy(slots_, other.slots_, N * C);
-        slots_ = std::exchange(other.slots_, nullptr);
-        writePosition_.store(other.writePosition_.exchange(0, std::memory_order_relaxed), std::memory_order_relaxed);
-        readPosition_.store(other.readPosition_.exchange(0, std::memory_order_relaxed), std::memory_order_relaxed);
-    }
-    return *this;
 }
 
 // MARK: Buffer Information

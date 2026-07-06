@@ -269,8 +269,8 @@ template <std::size_t N, std::size_t C>
 inline MessageQueue<N, C>::MessageQueue(MessageQueue &&other) noexcept
     : writePosition_{other.writePosition_.exchange(0, std::memory_order_relaxed)},
       readPosition_{other.readPosition_.exchange(0, std::memory_order_relaxed)} {
-          std::memcpy(slots_, other.slots_, N * C);
-      }
+    std::memcpy(slots_, other.slots_, N * C);
+}
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>

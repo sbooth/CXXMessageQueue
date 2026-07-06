@@ -461,8 +461,8 @@ inline bool MessageQueue<N>::writeValues(const Args &...args) noexcept {
 template <std::size_t N>
     requires ValidPowerOfTwo<N>
 inline bool MessageQueue<N>::read(std::span<unsigned char> buffer, SizeType &written) noexcept {
+    written = 0;
     if (buffer.empty() || buffer.size() < N || slotCount_ == 0) [[unlikely]] {
-        written = 0;
         return false;
     }
 
@@ -497,8 +497,8 @@ inline bool MessageQueue<N>::readValues(Args &...args) noexcept {
 template <std::size_t N>
     requires ValidPowerOfTwo<N>
 inline bool MessageQueue<N>::peek(std::span<unsigned char> buffer, SizeType &written) const noexcept {
+    written = 0;
     if (buffer.empty() || slotCount_ == 0) [[unlikely]] {
-        written = 0;
         return false;
     }
 

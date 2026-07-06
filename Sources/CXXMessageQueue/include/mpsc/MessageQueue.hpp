@@ -38,13 +38,13 @@ concept ValueLike = ByteCopyable<T> && !std::ranges::range<std::remove_cvref_t<T
 ///
 /// This class is thread safe when used with multiple producers and a single consumer.
 ///
-/// The message queue contains a fixed number of slots, each with a fixed byte capacity.
+/// The message queue contains a fixed number of slots, each with a fixed byte capacity (C).
 /// The amount of data that can be written or read in one operation is limited by the size of a single slot.
 /// Each write occupies a single slot regardless of size, and similarly reads occur from a single slot only.
 ///
 /// This message queue performs raw byte copies; it does not provide serialization.
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 class MessageQueue final {
   public:
     /// Unsigned integer type.
@@ -208,7 +208,7 @@ class MessageQueue final {
         /// The number of valid bytes in data_
         SizeType dataSize_{0};
         /// The slot data.
-        unsigned char data_[N];
+        unsigned char data_[C];
 
         static_assert(std::atomic_ref<SizeType>::is_always_lock_free, "Lock-free std::atomic_ref<SizeType> required");
     };
@@ -291,9 +291,9 @@ inline void deserialize(std::span<const unsigned char> data, Args &...args) noex
 
 // MARK: Construction and Destruction
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline MessageQueue<N>::MessageQueue(SizeType minSlots) {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline MessageQueue<C>::MessageQueue(SizeType minSlots) {
     if (minSlots < MessageQueue::minSlots || minSlots > MessageQueue::maxSlots) [[unlikely]] {
         throw std::invalid_argument("slot count out of range");
     }
@@ -302,17 +302,17 @@ inline MessageQueue<N>::MessageQueue(SizeType minSlots) {
     }
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline MessageQueue<N>::MessageQueue(MessageQueue &&other) noexcept
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline MessageQueue<C>::MessageQueue(MessageQueue &&other) noexcept
     : slots_{std::exchange(other.slots_, nullptr)}, slotCount_{std::exchange(other.slotCount_, 0)},
       slotCountMask_{std::exchange(other.slotCountMask_, 0)},
       writePosition_{other.writePosition_.exchange(0, std::memory_order_relaxed)},
       readPosition_{other.readPosition_.exchange(0, std::memory_order_relaxed)} {}
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline auto MessageQueue<N>::operator=(MessageQueue &&other) noexcept -> MessageQueue & {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline auto MessageQueue<C>::operator=(MessageQueue &&other) noexcept -> MessageQueue & {
     if (this != &other) [[likely]] {
         slots_ = std::exchange(other.slots_, nullptr);
         slotCount_ = std::exchange(other.slotCount_, 0);
@@ -326,9 +326,9 @@ inline auto MessageQueue<N>::operator=(MessageQueue &&other) noexcept -> Message
 
 // MARK: Buffer Management
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline bool MessageQueue<N>::allocate(SizeType minSlots) noexcept {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline bool MessageQueue<C>::allocate(SizeType minSlots) noexcept {
     if (minSlots < MessageQueue::minSlots || minSlots > MessageQueue::maxSlots) [[unlikely]] {
         return false;
     }
@@ -357,9 +357,9 @@ inline bool MessageQueue<N>::allocate(SizeType minSlots) noexcept {
     return true;
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline void MessageQueue<N>::deallocate() noexcept {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline void MessageQueue<C>::deallocate() noexcept {
     if (slots_) [[likely]] {
         slots_.reset();
 
@@ -371,55 +371,55 @@ inline void MessageQueue<N>::deallocate() noexcept {
     }
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline MessageQueue<N>::operator bool() const noexcept {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline MessageQueue<C>::operator bool() const noexcept {
     return static_cast<bool>(slots_);
 }
 
 // MARK: Buffer Information
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline auto MessageQueue<N>::slotCount() const noexcept -> SizeType {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline auto MessageQueue<C>::slotCount() const noexcept -> SizeType {
     return slotCount_;
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline std::size_t MessageQueue<N>::slotCapacity() const noexcept {
-    return N;
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline std::size_t MessageQueue<C>::slotCapacity() const noexcept {
+    return C;
 }
 
 // MARK: Buffer Usage
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline auto MessageQueue<N>::emptySlots() const noexcept -> SizeType {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline auto MessageQueue<C>::emptySlots() const noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
     return slotCount_ - (writePos - readPos);
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline bool MessageQueue<N>::isFull() const noexcept {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline bool MessageQueue<C>::isFull() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_acquire);
     return (writePos - readPos) == slotCount_;
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline auto MessageQueue<N>::occupiedSlots() const noexcept -> SizeType {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline auto MessageQueue<C>::occupiedSlots() const noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return writePos - readPos;
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline bool MessageQueue<N>::isEmpty() const noexcept {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline bool MessageQueue<C>::isEmpty() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_acquire);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return writePos == readPos;
@@ -427,10 +427,10 @@ inline bool MessageQueue<N>::isEmpty() const noexcept {
 
 // MARK: Writing
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline bool MessageQueue<N>::write(std::span<const unsigned char> data) noexcept {
-    if (data.empty() || data.size() > N || slotCount_ == 0) [[unlikely]] {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline bool MessageQueue<C>::write(std::span<const unsigned char> data) noexcept {
+    if (data.empty() || data.size() > C || slotCount_ == 0) [[unlikely]] {
         return false;
     }
 
@@ -440,13 +440,13 @@ inline bool MessageQueue<N>::write(std::span<const unsigned char> data) noexcept
     });
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 template <ValueLike... Args>
     requires(sizeof...(Args) > 0)
-inline bool MessageQueue<N>::writeValues(const Args &...args) noexcept {
+inline bool MessageQueue<C>::writeValues(const Args &...args) noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
-    if (totalSize > N || slotCount_ == 0) [[unlikely]] {
+    if (totalSize > C || slotCount_ == 0) [[unlikely]] {
         return false;
     }
 
@@ -458,11 +458,11 @@ inline bool MessageQueue<N>::writeValues(const Args &...args) noexcept {
 
 // MARK: Reading
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline bool MessageQueue<N>::read(std::span<unsigned char> buffer, SizeType &written) noexcept {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline bool MessageQueue<C>::read(std::span<unsigned char> buffer, SizeType &written) noexcept {
     written = 0;
-    if (buffer.empty() || buffer.size() < N || slotCount_ == 0) [[unlikely]] {
+    if (buffer.empty() || buffer.size() < C || slotCount_ == 0) [[unlikely]] {
         return false;
     }
 
@@ -473,13 +473,13 @@ inline bool MessageQueue<N>::read(std::span<unsigned char> buffer, SizeType &wri
     });
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 template <ValueLike... Args>
     requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
-inline bool MessageQueue<N>::readValues(Args &...args) noexcept {
+inline bool MessageQueue<C>::readValues(Args &...args) noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
-    if (totalSize > N || slotCount_ == 0) [[unlikely]] {
+    if (totalSize > C || slotCount_ == 0) [[unlikely]] {
         return false;
     }
 
@@ -494,9 +494,9 @@ inline bool MessageQueue<N>::readValues(Args &...args) noexcept {
 
 // MARK: Peeking
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
-inline bool MessageQueue<N>::peek(std::span<unsigned char> buffer, SizeType &written) const noexcept {
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+inline bool MessageQueue<C>::peek(std::span<unsigned char> buffer, SizeType &written) const noexcept {
     written = 0;
     if (buffer.empty() || slotCount_ == 0) [[unlikely]] {
         return false;
@@ -510,13 +510,13 @@ inline bool MessageQueue<N>::peek(std::span<unsigned char> buffer, SizeType &wri
     });
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 template <ValueLike... Args>
     requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
-inline bool MessageQueue<N>::peekValues(Args &...args) const noexcept {
+inline bool MessageQueue<C>::peekValues(Args &...args) const noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
-    if (totalSize > N || slotCount_ == 0) [[unlikely]] {
+    if (totalSize > C || slotCount_ == 0) [[unlikely]] {
         return false;
     }
 
@@ -531,12 +531,12 @@ inline bool MessageQueue<N>::peekValues(Args &...args) const noexcept {
 
 // MARK: Helpers
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 template <typename Writer>
     requires std::invocable<Writer, std::span<unsigned char>> &&
              std::is_nothrow_invocable_v<Writer, std::span<unsigned char>>
-inline bool MessageQueue<N>::writeToSlot(Writer &&writer) noexcept {
+inline bool MessageQueue<C>::writeToSlot(Writer &&writer) noexcept {
     auto writePos = writePosition_.load(std::memory_order_relaxed);
 
     while (true) {
@@ -551,7 +551,7 @@ inline bool MessageQueue<N>::writeToSlot(Writer &&writer) noexcept {
             if (writePosition_.compare_exchange_weak(writePos, writePos + 1, std::memory_order_relaxed,
                                                      std::memory_order_relaxed)) {
 
-                std::span<unsigned char> buf{slot.data_, N};
+                std::span<unsigned char> buf{slot.data_, C};
                 const auto bytesWritten = std::invoke(std::forward<Writer>(writer), buf);
                 slot.dataSize_ = bytesWritten;
 
@@ -568,12 +568,12 @@ inline bool MessageQueue<N>::writeToSlot(Writer &&writer) noexcept {
     }
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 template <bool Consume, typename Reader>
     requires std::invocable<Reader, std::span<const unsigned char>> &&
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-inline bool MessageQueue<N>::readFromSlot(Reader &&reader) noexcept {
+inline bool MessageQueue<C>::readFromSlot(Reader &&reader) noexcept {
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     auto &slot = slots_[readPos & slotCountMask_];
 
@@ -599,12 +599,12 @@ inline bool MessageQueue<N>::readFromSlot(Reader &&reader) noexcept {
     return true;
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 template <typename Reader>
     requires std::invocable<Reader, std::span<const unsigned char>> &&
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-inline bool MessageQueue<N>::peekFromSlot(Reader &&reader) const noexcept {
+inline bool MessageQueue<C>::peekFromSlot(Reader &&reader) const noexcept {
     return const_cast<MessageQueue *>(this)->readFromSlot<false>(reader);
 }
 

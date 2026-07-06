@@ -175,8 +175,8 @@ class MessageQueue final {
     /// @note This method is only safe to call from the consumer.
     /// @tparam Args The types to read.
     /// @param args The destination values.
-    /// @return true if the values were successfully read, false if the message queue is empty or the slot contains fewer
-    /// bytes than requested.
+    /// @return true if the values were successfully read, false if the message queue is empty or the slot contains
+    /// fewer bytes than requested.
     template <ValueLike... Args>
         requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
     bool readValues(Args &...args) noexcept [[clang::nonblocking]];

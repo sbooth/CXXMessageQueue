@@ -341,7 +341,6 @@ template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline bool MessageQueue<N, C>::dequeue(std::span<unsigned char> buffer, SizeType &written) noexcept {
     written = 0;
-
     if (buffer.empty() || buffer.size() < C) [[unlikely]] {
         return false;
     }
@@ -377,8 +376,8 @@ inline bool MessageQueue<N, C>::dequeueValues(Args &...args) noexcept {
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline bool MessageQueue<N, C>::peek(std::span<unsigned char> buffer, SizeType &written) const noexcept {
+    written = 0;
     if (buffer.empty()) [[unlikely]] {
-        written = 0;
         return false;
     }
 

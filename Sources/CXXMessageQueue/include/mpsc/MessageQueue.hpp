@@ -204,7 +204,7 @@ class MessageQueue final {
     /// A message queue slot.
     struct Slot {
         /// The slot's generation.
-        SizeType generation_{0};
+        AtomicSizeType generation_{0};
         /// The number of valid bytes in data_
         SizeType dataSize_{0};
         /// The slot data.
@@ -239,12 +239,21 @@ class MessageQueue final {
                  std::is_nothrow_invocable_v<Writer, std::span<unsigned char>>
     bool writeToSlot(Writer &&writer) noexcept;
 
+    /// Copies data from the readable slot using a callable.
+    /// @tparam Reader The type of the callable object.
+    /// @param reader A callable performing the read.
+    /// @param readPos The read position of the slot providing the data.
+    /// @return true if data was successfully read.
+    template <typename Reader>
+        requires std::invocable<Reader, std::span<const unsigned char>> &&
+                 std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
+    bool copyFromSlot(Reader &&reader, SizeType &readPos) const noexcept;
+
     /// Reads from the readable slot using a callable, optionally advancing the read position.
-    /// @tparam Consume true if the read position should be advanced.
     /// @tparam Reader The type of the callable object.
     /// @param reader A callable performing the read.
     /// @return true if data was successfully read.
-    template <bool Consume, typename Reader>
+    template <typename Reader>
         requires std::invocable<Reader, std::span<const unsigned char>> &&
                  std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
     bool readFromSlot(Reader &&reader) noexcept;
@@ -466,7 +475,7 @@ inline bool MessageQueue<C>::read(std::span<unsigned char> buffer, SizeType &wri
         return false;
     }
 
-    return readFromSlot<true>([&](std::span<const unsigned char> data) noexcept -> bool {
+    return readFromSlot([&](std::span<const unsigned char> data) noexcept -> bool {
         std::memcpy(buffer.data(), data.data(), data.size());
         written = data.size();
         return true;
@@ -483,7 +492,7 @@ inline bool MessageQueue<C>::readValues(Args &...args) noexcept {
         return false;
     }
 
-    return readFromSlot<true>([&](std::span<const unsigned char> data) noexcept -> bool {
+    return readFromSlot([&](std::span<const unsigned char> data) noexcept -> bool {
         if (data.size() < totalSize) {
             return false;
         }
@@ -541,8 +550,7 @@ inline bool MessageQueue<C>::writeToSlot(Writer &&writer) noexcept {
 
     while (true) {
         auto &slot = slots_[writePos & slotCountMask_];
-        std::atomic_ref<SizeType> generation_atomic(slot.generation_);
-        const auto generation = generation_atomic.load(std::memory_order_acquire);
+        const auto generation = slot.generation_.load(std::memory_order_acquire);
         const auto udiff = generation - writePos;
         const auto diff = static_cast<std::make_signed_t<SizeType>>(udiff);
 
@@ -555,7 +563,7 @@ inline bool MessageQueue<C>::writeToSlot(Writer &&writer) noexcept {
                 const auto bytesWritten = std::invoke(std::forward<Writer>(writer), buf);
                 slot.dataSize_ = bytesWritten;
 
-                generation_atomic.store(writePos + 1, std::memory_order_release);
+                slot.generation_.store(writePos + 1, std::memory_order_release);
                 return true;
             }
         } else if (diff < 0) {
@@ -568,17 +576,16 @@ inline bool MessageQueue<C>::writeToSlot(Writer &&writer) noexcept {
     }
 }
 
-template <std::size_t C>
-    requires ValidPowerOfTwo<C>
-template <bool Consume, typename Reader>
+template <std::size_t N>
+    requires ValidPowerOfTwo<N>
+template <typename Reader>
     requires std::invocable<Reader, std::span<const unsigned char>> &&
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-inline bool MessageQueue<C>::readFromSlot(Reader &&reader) noexcept {
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
+inline bool MessageQueue<N>::copyFromSlot(Reader &&reader, SizeType &readPos) const noexcept {
+    readPos = readPosition_.load(std::memory_order_relaxed);
     auto &slot = slots_[readPos & slotCountMask_];
 
-    std::atomic_ref<SizeType> generation_atomic(slot.generation_);
-    const auto generation = generation_atomic.load(std::memory_order_acquire);
+    const auto generation = slot.generation_.load(std::memory_order_acquire);
     const auto udiff = generation - (readPos + 1);
     const auto diff = static_cast<std::make_signed_t<SizeType>>(udiff);
 
@@ -587,14 +594,24 @@ inline bool MessageQueue<C>::readFromSlot(Reader &&reader) noexcept {
     }
 
     const auto data = std::span<const unsigned char>{slot.data_, slot.dataSize_};
-    if (!std::invoke(std::forward<Reader>(reader), data)) {
+    return std::invoke(std::forward<Reader>(reader), data);
+}
+
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
+template <typename Reader>
+    requires std::invocable<Reader, std::span<const unsigned char>> &&
+             std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
+inline bool MessageQueue<C>::readFromSlot(Reader &&reader) noexcept {
+    SizeType readPos;
+    if (!copyFromSlot(reader, readPos)) {
         return false;
     }
 
-    if constexpr (Consume) {
-        generation_atomic.store(readPos + slotCount_, std::memory_order_release);
-        readPosition_.store(readPos + 1, std::memory_order_relaxed);
-    }
+    auto &slot = slots_[readPos & slotCountMask_];
+
+    slot.generation_.store(readPos + slotCount_, std::memory_order_release);
+    readPosition_.store(readPos + 1, std::memory_order_relaxed);
 
     return true;
 }
@@ -605,7 +622,8 @@ template <typename Reader>
     requires std::invocable<Reader, std::span<const unsigned char>> &&
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
 inline bool MessageQueue<C>::peekFromSlot(Reader &&reader) const noexcept {
-    return const_cast<MessageQueue *>(this)->readFromSlot<false>(reader);
+    SizeType unused;
+    return copyFromSlot(reader, unused);
 }
 
 } /* namespace mpsc */

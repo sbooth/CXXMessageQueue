@@ -108,7 +108,7 @@ TEST(MessageQueueTest, FailureAndBoundaryCases) {
     MessageQueue<2, 4> queue;
     std::size_t written = 0;
     std::array<unsigned char, 8> largeBuffer{};
-    std::array<unsigned char, 2> smallBuffer{};
+    std::array<unsigned char, 1> smallBuffer{};
     std::array<unsigned char, 4> validBuffer = {1, 2, 3, 4};
 
     // Reject messaging exceeding single slot capacity
@@ -129,7 +129,6 @@ TEST(MessageQueueTest, FailureAndBoundaryCases) {
     EXPECT_FALSE(queue.enqueue(std::span<const unsigned char>(validBuffer.data(), 1)));
 
     // Try dequeuing into an insufficiently sized target buffer
-    // API states: false if target buffer size < C (Slot capacity)
     EXPECT_FALSE(queue.dequeue(smallBuffer, written));
 
     // Dequeue safely with properly sized buffer

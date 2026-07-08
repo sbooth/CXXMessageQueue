@@ -350,11 +350,14 @@ template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline bool MessageQueue<N, C>::dequeue(std::span<unsigned char> buffer, SizeType &written) noexcept {
     written = 0;
-    if (buffer.empty() || buffer.size() < C) [[unlikely]] {
+    if (buffer.empty()) [[unlikely]] {
         return false;
     }
 
     return consumeReadableSlot([&](std::span<const unsigned char> data) noexcept -> bool {
+        if (buffer.size() < data.size()) [[unlikely]] {
+            return false;
+        }
         std::memcpy(buffer.data(), data.data(), data.size());
         written = data.size();
         return true;
@@ -372,7 +375,7 @@ inline bool MessageQueue<N, C>::dequeueValues(Args &...args) noexcept {
     }
 
     return consumeReadableSlot([&](std::span<const unsigned char> data) noexcept -> bool {
-        if (data.size() < totalSize) {
+        if (data.size() < totalSize) [[unlikelely]] {
             return false;
         }
         detail::deserialize(data, args...);
@@ -409,7 +412,7 @@ inline bool MessageQueue<N, C>::peekValues(Args &...args) const noexcept {
     }
 
     return peekReadableSlot([&](std::span<const unsigned char> data) noexcept -> bool {
-        if (data.size() < totalSize) {
+        if (data.size() < totalSize) [[unlikely]] {
             return false;
         }
         detail::deserialize(data, args...);

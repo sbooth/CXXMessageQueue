@@ -52,8 +52,8 @@ static void BM_SingleThreaded_Values(benchmark::State &state) {
     SampleEvent event{123456789ULL, 42, 0};
 
     for (auto _ : state) {
-        queue.enqueueValues(event);
-        queue.dequeueValues(event);
+        queue.enqueue(event);
+        queue.dequeue(event);
     }
     state.SetItemsProcessed(state.iterations() * 2);
 }
@@ -81,7 +81,7 @@ template <std::size_t Slots, std::size_t Capacity> class MpscFixture : public be
             consumerThread = std::make_unique<std::thread>([this]() {
                 SampleEvent ev{};
                 while (running.load(std::memory_order_relaxed)) {
-                    if (!queue->dequeueValues(ev)) {
+                    if (!queue->dequeue(ev)) {
                         std::this_thread::yield();
                     }
                 }
@@ -109,7 +109,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(MpscFixture, BM_MpscThroughput, 4096, 64)(benchmark:
     // Every thread defined in the `.Threads()` argument below executes this loop concurrently
     for (auto _ : state) {
         // Spin-retry if the queue gets full under heavy thread pressure
-        while (!queue->enqueueValues(event)) {
+        while (!queue->enqueue(event)) {
             std::this_thread::yield();
         }
     }

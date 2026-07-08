@@ -148,13 +148,13 @@ TEST(MessageQueueTest, ValueLikeVariadicAPI) {
     ValidStruct inputStruct{100, 2.718};
 
     // Serialization
-    ASSERT_TRUE(queue.enqueueValues(inputInt, inputDouble, inputStruct));
+    ASSERT_TRUE(queue.enqueue(inputInt, inputDouble, inputStruct));
 
     // Peek matching values
     int peekInt = 0;
     double peekDouble = 0.0;
     ValidStruct peekStruct{0, 0.0};
-    ASSERT_TRUE(queue.peekValues(peekInt, peekDouble, peekStruct));
+    ASSERT_TRUE(queue.peek(peekInt, peekDouble, peekStruct));
 
     EXPECT_EQ(peekInt, inputInt);
     EXPECT_DOUBLE_EQ(peekDouble, inputDouble);
@@ -165,7 +165,7 @@ TEST(MessageQueueTest, ValueLikeVariadicAPI) {
     int outInt = 0;
     double outDouble = 0.0;
     ValidStruct outStruct{0, 0.0};
-    ASSERT_TRUE(queue.dequeueValues(outInt, outDouble, outStruct));
+    ASSERT_TRUE(queue.dequeue(outInt, outDouble, outStruct));
 
     EXPECT_EQ(outInt, inputInt);
     EXPECT_DOUBLE_EQ(outDouble, inputDouble);
@@ -224,7 +224,7 @@ TEST(MessageQueueStressTest, ConcurrencyMPSC) {
         int emptySpins = 0;
         while (activeProducers.load(std::memory_order_relaxed) > 0 || !queue.isEmpty()) {
             Packet pkt{};
-            if (queue.dequeueValues(pkt)) {
+            if (queue.dequeue(pkt)) {
                 totalSumReceived += pkt.sequence;
                 itemsSuccessfullyRead.fetch_add(1, std::memory_order_relaxed);
                 emptySpins = 0;
@@ -247,7 +247,7 @@ TEST(MessageQueueStressTest, ConcurrencyMPSC) {
             for (int seq = 1; seq <= MessagesPerProducer; ++seq) {
                 Packet pkt{id, seq};
                 // Keep pushing until the thread successfully claims a slot
-                while (!queue.enqueueValues(pkt)) {
+                while (!queue.enqueue(pkt)) {
                     std::this_thread::yield();
                 }
             }

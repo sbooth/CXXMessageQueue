@@ -579,7 +579,7 @@ template <std::size_t C>
 template <typename Reader>
     requires std::invocable<Reader, std::span<const unsigned char>> &&
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-inline bool MessageQueue<N>::copyFromSlot(Reader &&reader, SizeType &readPos) const noexcept {
+inline bool MessageQueue<C>::copyFromSlot(Reader &&reader, SizeType &readPos) const noexcept {
     readPos = readPosition_.load(std::memory_order_relaxed);
     auto &slot = slots_[readPos & slotCountMask_];
 

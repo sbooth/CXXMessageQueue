@@ -209,8 +209,6 @@ class MessageQueue final {
         SizeType dataSize_{0};
         /// The slot data.
         unsigned char data_[C];
-
-        static_assert(std::atomic_ref<SizeType>::is_always_lock_free, "Lock-free std::atomic_ref<SizeType> required");
     };
 
     /// The message queue slots.

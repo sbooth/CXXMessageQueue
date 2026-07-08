@@ -56,3 +56,17 @@ if(BUILD_TESTING)
     include(GoogleTest)
     gtest_discover_tests(run_tests)
 endif()
+
+option(BUILD_BENCHMARK "Build benchmark" OFF)
+
+if(BUILD_BENCHMARK)
+    find_package(benchmark REQUIRED)
+
+    add_executable(benchmark test/message_queue_benchmark.cpp)
+
+    target_link_libraries(benchmark
+        PRIVATE
+            mpsc::MessageQueue
+            benchmark::benchmark
+    )
+endif()

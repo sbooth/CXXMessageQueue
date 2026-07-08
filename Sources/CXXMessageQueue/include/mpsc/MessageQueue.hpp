@@ -196,26 +196,26 @@ class MessageQueue final {
     // MARK: Helpers
 
     /// Claims a writable slot if available and invokes a callable to write data.
-    /// @tparam Writer The type of the callable object.
+    /// @tparam W The type of the callable object.
     /// @param writer A callable performing the write.
     /// @return true if a writable slot was claimed.
     template <Writer W> bool withWritableSlot(W &&writer) noexcept;
 
     /// Invokes a callable with data from the readable slot.
-    /// @tparam Reader The type of the callable object.
+    /// @tparam R The type of the callable object.
     /// @param reader A callable performing the read.
     /// @param readPos The read position of the slot providing the data.
     /// @return true if data was provided and the callable returned true.
     template <Reader R> bool withReadableSlot(R &&reader, SizeType &readPos) const noexcept;
 
     /// Invokes a callable with data from the readable slot and advances the read position.
-    /// @tparam Reader The type of the callable object.
+    /// @tparam R The type of the callable object.
     /// @param reader A callable performing the read.
     /// @return true if data was provided and the callable returned true.
     template <Reader R> bool consumeReadableSlot(R &&reader) noexcept;
 
     /// Invokes a callable with data from the readable slot without advancing the read position.
-    /// @tparam Reader The type of the callable object.
+    /// @tparam R The type of the callable object.
     /// @param reader A callable performing the read.
     /// @return true if data was provided and the callable returned true.
     template <Reader R> bool peekReadableSlot(R &&reader) const noexcept;

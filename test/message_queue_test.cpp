@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+namespace mpsc::test {
+
 // Test structural types for Concept validation
 struct ValidStruct {
     int a;
@@ -32,19 +34,19 @@ struct InvalidNonStandardLayout {
 // ============================================================================
 TEST(MessageQueueStaticTest, ConceptConstraints) {
     // Test ValidPowerOfTwo
-    static_assert(mpsc::ValidPowerOfTwo<2>);
-    static_assert(mpsc::ValidPowerOfTwo<4>);
-    static_assert(mpsc::ValidPowerOfTwo<1024>);
-    static_assert(!mpsc::ValidPowerOfTwo<0>);
-    static_assert(!mpsc::ValidPowerOfTwo<1>);
-    static_assert(!mpsc::ValidPowerOfTwo<3>);
-    static_assert(!mpsc::ValidPowerOfTwo<1000>);
+    static_assert(ValidPowerOfTwo<2>);
+    static_assert(ValidPowerOfTwo<4>);
+    static_assert(ValidPowerOfTwo<1024>);
+    static_assert(!ValidPowerOfTwo<0>);
+    static_assert(!ValidPowerOfTwo<1>);
+    static_assert(!ValidPowerOfTwo<3>);
+    static_assert(!ValidPowerOfTwo<1000>);
 
     // Test ValueLike
-    static_assert(mpsc::ValueLike<int>);
-    static_assert(mpsc::ValueLike<ValidStruct>);
-    static_assert(!mpsc::ValueLike<int *>);             // Pointers rejected
-    static_assert(!mpsc::ValueLike<std::vector<char>>); // Ranges rejected
+    static_assert(ValueLike<int>);
+    static_assert(ValueLike<ValidStruct>);
+    static_assert(!ValueLike<int *>);             // Pointers rejected
+    static_assert(!ValueLike<std::vector<char>>); // Ranges rejected
 }
 
 // ============================================================================
@@ -53,7 +55,7 @@ TEST(MessageQueueStaticTest, ConceptConstraints) {
 TEST(MessageQueueTest, InitialStateAndAttributes) {
     constexpr std::size_t Slots = 4;
     constexpr std::size_t Capacity = 16;
-    mpsc::MessageQueue<Slots, Capacity> queue;
+    MessageQueue<Slots, Capacity> queue;
 
     EXPECT_EQ(queue.slotCount(), Slots);
     EXPECT_EQ(queue.slotCapacity(), Capacity);
@@ -71,7 +73,7 @@ TEST(MessageQueueTest, InitialStateAndAttributes) {
 // 3. Raw Byte Enqueue / Dequeue / Peek Operations
 // ============================================================================
 TEST(MessageQueueTest, RawByteLifecycle) {
-    mpsc::MessageQueue<4, 8> queue;
+    MessageQueue<4, 8> queue;
     std::vector<unsigned char> sendData = {0xDE, 0xAD, 0xBE, 0xEF};
     std::vector<unsigned char> recvBuffer(8, 0);
     std::size_t bytesWritten = 0;
@@ -103,7 +105,7 @@ TEST(MessageQueueTest, RawByteLifecycle) {
 // 4. Boundary and Failure Conditions
 // ============================================================================
 TEST(MessageQueueTest, FailureAndBoundaryCases) {
-    mpsc::MessageQueue<2, 4> queue;
+    MessageQueue<2, 4> queue;
     std::size_t written = 0;
     std::array<unsigned char, 8> largeBuffer{};
     std::array<unsigned char, 2> smallBuffer{};
@@ -140,7 +142,7 @@ TEST(MessageQueueTest, FailureAndBoundaryCases) {
 // 5. Value-Like Serialization (Variadic Arguments)
 // ============================================================================
 TEST(MessageQueueTest, ValueLikeVariadicAPI) {
-    mpsc::MessageQueue<4, 32> queue;
+    MessageQueue<4, 32> queue;
 
     int inputInt = 42;
     double inputDouble = 3.14159;
@@ -178,7 +180,7 @@ TEST(MessageQueueTest, ValueLikeVariadicAPI) {
 TEST(MessageQueueTest, GenerationWrapAround) {
     // Tests that slot generations advance properly and work beyond multiple rotations
     constexpr std::size_t Slots = 2;
-    mpsc::MessageQueue<Slots, 4> queue;
+    MessageQueue<Slots, 4> queue;
     std::array<unsigned char, 4> token = {7, 7, 7, 7};
     std::array<unsigned char, 4> outToken{};
     std::size_t written = 0;
@@ -198,7 +200,7 @@ TEST(MessageQueueTest, GenerationWrapAround) {
 TEST(MessageQueueStressTest, ConcurrencyMPSC) {
     constexpr std::size_t Slots = 128;
     constexpr std::size_t Capacity = 8;
-    mpsc::MessageQueue<Slots, Capacity> queue;
+    MessageQueue<Slots, Capacity> queue;
 
     constexpr int NumProducers = 4;
     constexpr int MessagesPerProducer = 5000;
@@ -216,7 +218,7 @@ TEST(MessageQueueStressTest, ConcurrencyMPSC) {
         int producerId;
         int sequence;
     };
-    static_assert(mpsc::ValueLike<Packet>);
+    static_assert(ValueLike<Packet>);
 
     // 1. Launch Consumer Thread
     std::thread consumerThread([&]() {
@@ -279,3 +281,5 @@ TEST(MessageQueueStressTest, ConcurrencyMPSC) {
 
     EXPECT_EQ(totalSumReceived, totalExpectedSum);
 }
+
+} // namespace mpsc::test

@@ -34,6 +34,20 @@ concept ByteCopyable =
 template <typename T>
 concept ValueLike = ByteCopyable<T> && !std::ranges::range<std::remove_cvref_t<T>>;
 
+template <typename F>
+concept Writer =
+        std::invocable<F, std::span<unsigned char>> && std::is_nothrow_invocable_v<F, std::span<unsigned char>> &&
+        requires(F &&func, std::span<unsigned char> data) {
+            { std::invoke(std::forward<F>(func), data) } -> std::same_as<std::size_t>;
+        };
+
+template <typename F>
+concept Reader = std::invocable<F, std::span<const unsigned char>> &&
+                 std::is_nothrow_invocable_v<F, std::span<const unsigned char>> &&
+                 requires(F &&func, std::span<const unsigned char> data) {
+                     { std::invoke(std::forward<F>(func), data) } -> std::same_as<bool>;
+                 };
+
 /// A lock-free MPSC message queue.
 ///
 /// This class is thread safe when used with multiple producers and a single consumer.
@@ -229,41 +243,29 @@ class MessageQueue final {
     // MARK: Helpers
 
     /// Claims a writable slot if available and invokes a callable to write data.
-    /// @tparam Writer The type of the callable object.
+    /// @tparam W The type of the callable object.
     /// @param writer A callable performing the write.
     /// @return true if a writable slot was claimed.
-    template <typename Writer>
-        requires std::invocable<Writer, std::span<unsigned char>> &&
-                 std::is_nothrow_invocable_v<Writer, std::span<unsigned char>>
-    bool withWritableSlot(Writer &&writer) noexcept;
+    template <Writer W> bool withWritableSlot(W &&writer) noexcept;
 
     /// Invokes a callable with data from the readable slot.
-    /// @tparam Reader The type of the callable object.
+    /// @tparam R The type of the callable object.
     /// @param reader A callable performing the read.
     /// @param readPos The read position of the slot providing the data.
     /// @return true if data was provided and the callable returned true.
-    template <typename Reader>
-        requires std::invocable<Reader, std::span<const unsigned char>> &&
-                 std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-    bool withReadableSlot(Reader &&reader, SizeType &readPos) const noexcept;
+    template <Reader R> bool withReadableSlot(R &&reader, SizeType &readPos) const noexcept;
 
     /// Invokes a callable with data from the readable slot and advances the read position.
-    /// @tparam Reader The type of the callable object.
+    /// @tparam R The type of the callable object.
     /// @param reader A callable performing the read.
     /// @return true if data was provided and the callable returned true.
-    template <typename Reader>
-        requires std::invocable<Reader, std::span<const unsigned char>> &&
-                 std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-    bool consumeReadableSlot(Reader &&reader) noexcept;
+    template <Reader R> bool consumeReadableSlot(R &&reader) noexcept;
 
     /// Invokes a callable with data from the readable slot without advancing the read position.
-    /// @tparam Reader The type of the callable object.
+    /// @tparam R The type of the callable object.
     /// @param reader A callable performing the read.
     /// @return true if data was provided and the callable returned true.
-    template <typename Reader>
-        requires std::invocable<Reader, std::span<const unsigned char>> &&
-                 std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-    bool peekReadableSlot(Reader &&reader) const noexcept;
+    template <Reader R> bool peekReadableSlot(R &&reader) const noexcept;
 };
 
 // MARK: - Implementation -
@@ -540,10 +542,8 @@ inline bool MessageQueue<C>::peekValues(Args &...args) const noexcept {
 
 template <std::size_t C>
     requires ValidPowerOfTwo<C>
-template <typename Writer>
-    requires std::invocable<Writer, std::span<unsigned char>> &&
-             std::is_nothrow_invocable_v<Writer, std::span<unsigned char>>
-inline bool MessageQueue<C>::withWritableSlot(Writer &&writer) noexcept {
+template <Writer W>
+inline bool MessageQueue<C>::withWritableSlot(W &&writer) noexcept {
     auto writePos = writePosition_.load(std::memory_order_relaxed);
 
     while (true) {
@@ -558,7 +558,7 @@ inline bool MessageQueue<C>::withWritableSlot(Writer &&writer) noexcept {
                                                      std::memory_order_relaxed)) {
 
                 std::span<unsigned char> buf{slot.data_, C};
-                const auto bytesWritten = std::invoke(std::forward<Writer>(writer), buf);
+                const auto bytesWritten = std::invoke(std::forward<W>(writer), buf);
                 slot.dataSize_ = bytesWritten;
 
                 slot.generation_.store(writePos + 1, std::memory_order_release);
@@ -576,10 +576,8 @@ inline bool MessageQueue<C>::withWritableSlot(Writer &&writer) noexcept {
 
 template <std::size_t C>
     requires ValidPowerOfTwo<C>
-template <typename Reader>
-    requires std::invocable<Reader, std::span<const unsigned char>> &&
-             std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-inline bool MessageQueue<C>::withReadableSlot(Reader &&reader, SizeType &readPos) const noexcept {
+template <Reader R>
+inline bool MessageQueue<C>::withReadableSlot(R &&reader, SizeType &readPos) const noexcept {
     readPos = readPosition_.load(std::memory_order_relaxed);
 
     auto &slot = slots_[readPos & slotCountMask_];
@@ -592,17 +590,15 @@ inline bool MessageQueue<C>::withReadableSlot(Reader &&reader, SizeType &readPos
     }
 
     const auto data = std::span<const unsigned char>{slot.data_, slot.dataSize_};
-    return std::invoke(std::forward<Reader>(reader), data);
+    return std::invoke(std::forward<R>(reader), data);
 }
 
 template <std::size_t C>
     requires ValidPowerOfTwo<C>
-template <typename Reader>
-    requires std::invocable<Reader, std::span<const unsigned char>> &&
-             std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-inline bool MessageQueue<C>::consumeReadableSlot(Reader &&reader) noexcept {
+template <Reader R>
+inline bool MessageQueue<C>::consumeReadableSlot(R &&reader) noexcept {
     SizeType readPos;
-    if (!withReadableSlot(std::forward<Reader>(reader), readPos)) {
+    if (!withReadableSlot(std::forward<R>(reader), readPos)) {
         return false;
     }
 
@@ -616,12 +612,10 @@ inline bool MessageQueue<C>::consumeReadableSlot(Reader &&reader) noexcept {
 
 template <std::size_t C>
     requires ValidPowerOfTwo<C>
-template <typename Reader>
-    requires std::invocable<Reader, std::span<const unsigned char>> &&
-             std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
-inline bool MessageQueue<C>::peekReadableSlot(Reader &&reader) const noexcept {
+template <Reader R>
+inline bool MessageQueue<C>::peekReadableSlot(R &&reader) const noexcept {
     SizeType unused;
-    return withReadableSlot(std::forward<Reader>(reader), unused);
+    return withReadableSlot(std::forward<R>(reader), unused);
 }
 
 } /* namespace mpsc */

@@ -581,8 +581,8 @@ template <typename Reader>
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
 inline bool MessageQueue<C>::withReadableSlot(Reader &&reader, SizeType &readPos) const noexcept {
     readPos = readPosition_.load(std::memory_order_relaxed);
-    auto &slot = slots_[readPos & slotCountMask_];
 
+    auto &slot = slots_[readPos & slotCountMask_];
     const auto generation = slot.generation_.load(std::memory_order_acquire);
     const auto udiff = generation - (readPos + 1);
     const auto diff = static_cast<std::make_signed_t<SizeType>>(udiff);

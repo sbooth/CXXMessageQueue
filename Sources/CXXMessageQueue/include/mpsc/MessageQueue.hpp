@@ -36,13 +36,17 @@ concept ValueLike = ByteCopyable<T> && !std::ranges::range<std::remove_cvref_t<T
 
 template <typename F>
 concept Writer =
-        std::invocable<F, std::span<unsigned char> &> && std::is_nothrow_invocable_v<F, std::span<unsigned char> &> &&
-        std::convertible_to<std::invoke_result_t<F, std::span<unsigned char> &>, std::size_t>;
+        std::invocable<F, std::span<unsigned char>> && std::is_nothrow_invocable_v<F, std::span<unsigned char>> &&
+        requires(F &&func, std::span<unsigned char> data) {
+            { std::invoke(std::forward<F>(func), data) } -> std::same_as<std::size_t>;
+        };
 
 template <typename F>
-concept Reader = std::invocable<F, std::span<const unsigned char> &> &&
-                 std::is_nothrow_invocable_v<F, std::span<const unsigned char> &> &&
-                 std::convertible_to<std::invoke_result_t<F, std::span<const unsigned char> &>, bool>;
+concept Reader = std::invocable<F, std::span<const unsigned char>> &&
+                 std::is_nothrow_invocable_v<F, std::span<const unsigned char>> &&
+                 requires(F &&func, std::span<const unsigned char> data) {
+                     { std::invoke(std::forward<F>(func), data) } -> std::same_as<bool>;
+                 };
 
 /// A lock-free MPSC message queue.
 ///

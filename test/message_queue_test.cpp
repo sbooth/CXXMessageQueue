@@ -39,6 +39,8 @@ TEST_F(MessageQueueTest, Basic) {
 
     std::array<unsigned char, slotCapacity> a;
     std::size_t sz;
+    EXPECT_EQ(q.peek(a, sz), false);
+    EXPECT_EQ(sz, 0);
     EXPECT_EQ(q.dequeue(a, sz), false);
     EXPECT_EQ(sz, 0);
     EXPECT_EQ(q.enqueue(a), true);

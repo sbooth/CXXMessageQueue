@@ -132,7 +132,7 @@ class MessageQueue final {
     /// is insufficient.
     template <ValueLike... Args>
         requires(sizeof...(Args) > 0)
-    bool enqueueValues(const Args &...args) noexcept [[clang::nonblocking]];
+    bool enqueue(const Args &...args) noexcept [[clang::nonblocking]];
 
     // MARK: Dequeuing Messages
 
@@ -152,7 +152,7 @@ class MessageQueue final {
     /// insufficient data.
     template <ValueLike... Args>
         requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
-    bool dequeueValues(Args &...args) noexcept [[clang::nonblocking]];
+    bool dequeue(Args &...args) noexcept [[clang::nonblocking]];
 
     // MARK: Peeking
 
@@ -171,7 +171,7 @@ class MessageQueue final {
     /// contains insufficient data.
     template <ValueLike... Args>
         requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
-    [[nodiscard]] bool peekValues(Args &...args) const noexcept [[clang::nonblocking]];
+    [[nodiscard]] bool peek(Args &...args) const noexcept [[clang::nonblocking]];
 
   private:
     /// A message queue slot.
@@ -332,7 +332,7 @@ template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
                                template <ValueLike... Args>
                  requires(sizeof...(Args) > 0)
-inline bool MessageQueue<N, C>::enqueueValues(const Args &...args) noexcept {
+inline bool MessageQueue<N, C>::enqueue(const Args &...args) noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
     if (totalSize > C) [[unlikely]] {
         return false;
@@ -368,7 +368,7 @@ template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
                                template <ValueLike... Args>
                  requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
-inline bool MessageQueue<N, C>::dequeueValues(Args &...args) noexcept {
+inline bool MessageQueue<N, C>::dequeue(Args &...args) noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
     if (totalSize > C) [[unlikely]] {
         return false;
@@ -405,7 +405,7 @@ template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
                                template <ValueLike... Args>
                  requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
-inline bool MessageQueue<N, C>::peekValues(Args &...args) const noexcept {
+inline bool MessageQueue<N, C>::peek(Args &...args) const noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
     if (totalSize > C) [[unlikely]] {
         return false;

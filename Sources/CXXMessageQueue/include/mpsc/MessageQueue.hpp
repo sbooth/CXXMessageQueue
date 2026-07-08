@@ -602,7 +602,7 @@ template <typename Reader>
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
 inline bool MessageQueue<C>::readFromSlot(Reader &&reader) noexcept {
     SizeType readPos;
-    if (!copyFromSlot(reader, readPos)) {
+    if (!copyFromSlot(std::forward<Reader>(reader), readPos)) {
         return false;
     }
 
@@ -621,7 +621,7 @@ template <typename Reader>
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
 inline bool MessageQueue<C>::peekFromSlot(Reader &&reader) const noexcept {
     SizeType unused;
-    return copyFromSlot(reader, unused);
+    return copyFromSlot(std::forward<Reader>(reader), unused);
 }
 
 } /* namespace mpsc */

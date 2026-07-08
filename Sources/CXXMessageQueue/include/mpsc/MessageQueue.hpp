@@ -84,7 +84,7 @@ class MessageQueue final {
     /// The number of slots in the message queue.
     static constexpr auto slotCount = N;
 
-    /// The capacity of a single slot in the message queue.
+    /// The capacity of a single slot in the message queue in bytes.
     static constexpr auto slotCapacity = C;
 
     // MARK: Buffer Usage

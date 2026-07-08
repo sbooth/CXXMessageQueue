@@ -249,7 +249,7 @@ class MessageQueue final {
                  std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>
     bool copyFromSlot(Reader &&reader, SizeType &readPos) const noexcept;
 
-    /// Reads from the readable slot using a callable, optionally advancing the read position.
+    /// Reads from the readable slot using a callable and advances the read position.
     /// @tparam Reader The type of the callable object.
     /// @param reader A callable performing the read.
     /// @return true if data was successfully read.
@@ -576,8 +576,8 @@ inline bool MessageQueue<C>::writeToSlot(Writer &&writer) noexcept {
     }
 }
 
-template <std::size_t N>
-    requires ValidPowerOfTwo<N>
+template <std::size_t C>
+    requires ValidPowerOfTwo<C>
 template <typename Reader>
     requires std::invocable<Reader, std::span<const unsigned char>> &&
              std::is_nothrow_invocable_v<Reader, std::span<const unsigned char>>

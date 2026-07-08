@@ -375,7 +375,7 @@ inline bool MessageQueue<N, C>::dequeueValues(Args &...args) noexcept {
     }
 
     return consumeReadableSlot([&](std::span<const unsigned char> data) noexcept -> bool {
-        if (data.size() < totalSize) [[unlikelely]] {
+        if (data.size() < totalSize) [[unlikely]] {
             return false;
         }
         detail::deserialize(data, args...);

@@ -81,15 +81,11 @@ class MessageQueue final {
 
     // MARK: Buffer Information
 
-    /// Returns the number of slots in the message queue.
-    /// @note This method is safe to call from both producer and consumer.
-    /// @return The message queue slot count.
-    [[nodiscard]] constexpr std::size_t slotCount() const noexcept [[clang::nonblocking]];
+    /// The number of slots in the message queue.
+    static constexpr auto slotCount = N;
 
-    /// Returns the capacity of a single slot in the message queue.
-    /// @note This method is safe to call from both producer and consumer.
-    /// @return The capacity of a single slot in the message queue in bytes.
-    [[nodiscard]] constexpr std::size_t slotCapacity() const noexcept [[clang::nonblocking]];
+    /// The capacity of a single slot in the message queue.
+    static constexpr auto slotCapacity = C;
 
     // MARK: Buffer Usage
 
@@ -263,20 +259,6 @@ constexpr MessageQueue<N, C>::MessageQueue() noexcept {
     for (SizeType i = 0; i < N; ++i) {
         slots_[i].generation_ = i;
     }
-}
-
-// MARK: Buffer Information
-
-template <std::size_t N, std::size_t C>
-    requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline constexpr std::size_t MessageQueue<N, C>::slotCount() const noexcept {
-    return N;
-}
-
-template <std::size_t N, std::size_t C>
-    requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline constexpr std::size_t MessageQueue<N, C>::slotCapacity() const noexcept {
-    return C;
 }
 
 // MARK: Buffer Usage

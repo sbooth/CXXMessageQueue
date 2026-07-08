@@ -57,8 +57,8 @@ TEST(MessageQueueTest, InitialStateAndAttributes) {
     constexpr std::size_t Capacity = 16;
     MessageQueue<Slots, Capacity> queue;
 
-    EXPECT_EQ(queue.slotCount(), Slots);
-    EXPECT_EQ(queue.slotCapacity(), Capacity);
+    EXPECT_EQ(queue.slotCount, Slots);
+    EXPECT_EQ(queue.slotCapacity, Capacity);
 
     // Consumer-safe checks on empty queue
     EXPECT_TRUE(queue.isEmpty());

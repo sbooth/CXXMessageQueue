@@ -169,6 +169,19 @@ class MessageQueue final {
         requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
     [[nodiscard]] bool peek(Args &...args) const noexcept [[clang::nonblocking]];
 
+    // MARK: Discarding Messages
+
+    /// Discards messages without copying and advances the read position.
+    /// @note This method is only safe to call from the consumer.
+    /// @param count The maximum number of messages to discard.
+    /// @return The number of messages actually discarded.
+    [[nodiscard]] SizeType discard(SizeType count = 1) noexcept [[clang::nonblocking]];
+
+    /// Discards all messages without copying and advances the read position.
+    /// @note This method is only safe to call from the consumer.
+    /// @return The number of messages discarded.
+    [[nodiscard]] SizeType drain() noexcept [[clang::nonblocking]];
+
   private:
     /// A message queue slot.
     struct Slot {
@@ -400,6 +413,27 @@ inline bool MessageQueue<N, C>::peek(Args &...args) const noexcept {
         detail::deserialize(data, args...);
         return true;
     });
+}
+
+// MARK: Discarding Messages
+
+template <std::size_t N, std::size_t C>
+    requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
+inline auto MessageQueue<N, C>::discard(SizeType count) noexcept -> SizeType {
+    SizeType discarded = 0;
+    while (discarded < count) {
+        if (!consumeReadableSlot([&](std::span<const unsigned char>) noexcept -> bool { return true; })) {
+            break;
+        }
+        ++discarded;
+    }
+    return discarded;
+}
+
+template <std::size_t N, std::size_t C>
+    requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
+inline auto MessageQueue<N, C>::drain() noexcept -> SizeType {
+    return discard(std::numeric_limits<SizeType>::max());
 }
 
 // MARK: Helpers

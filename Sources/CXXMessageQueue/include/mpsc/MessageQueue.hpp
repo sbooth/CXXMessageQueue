@@ -255,7 +255,7 @@ inline void deserialize(std::span<const unsigned char> data, Args &...args) noex
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-MessageQueue<N, C>::MessageQueue() noexcept {
+inline MessageQueue<N, C>::MessageQueue() noexcept {
     for (SizeType i = 0; i < N; ++i) {
         slots_[i].generation_.store(i, std::memory_order_relaxed);
     }

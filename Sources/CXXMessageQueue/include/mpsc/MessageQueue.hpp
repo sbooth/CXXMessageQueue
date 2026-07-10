@@ -89,24 +89,24 @@ class MessageQueue final {
 
     // MARK: Buffer Usage
 
-    /// Returns the number of empty slots in the message queue.
+    /// Returns an estimate of the number of empty or unclaimed slots in the message queue.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return The number of empty slots available for messages.
+    /// @return The estimated number of empty or unclaimed slots.
     [[nodiscard]] SizeType emptySlots() const noexcept [[clang::nonblocking]];
 
-    /// Returns true if the message queue is full.
+    /// Returns true if the message queue appears full.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return true if the all slots in the queue are occupied.
+    /// @return true if all slots in the queue appear to be occupied or claimed.
     [[nodiscard]] bool isFull() const noexcept [[clang::nonblocking]];
 
-    /// Returns the number of occupied slots in the message queue.
+    /// Returns an estimate of the number of occupied or claimed slots in the message queue.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return The number of occupied slots containing messages.
+    /// @return The estimated number of occupied or claimed slots.
     [[nodiscard]] SizeType occupiedSlots() const noexcept [[clang::nonblocking]];
 
-    /// Returns true if the message queue is empty.
+    /// Returns true if the message queue appears empty.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return true if all slots in the queue are empty.
+    /// @return true if no slots in the queue appear to be occupied or claimed.
     [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
 
     // MARK: Enqueuing Messages

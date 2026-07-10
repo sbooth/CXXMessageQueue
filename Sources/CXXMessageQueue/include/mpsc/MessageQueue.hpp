@@ -79,7 +79,7 @@ class MessageQueue final {
     /// Destroys the message queue and releases all associated resources.
     ~MessageQueue() noexcept = default;
 
-    // MARK: Buffer Information
+    // MARK: Slot Count and Capacity
 
     /// The number of slots in the message queue.
     static constexpr auto slotCount = N;
@@ -87,29 +87,27 @@ class MessageQueue final {
     /// The capacity of a single slot in the message queue in bytes.
     static constexpr auto slotCapacity = C;
 
-    // MARK: Buffer Usage
+    // MARK: Statistics
 
-    /// Returns the number of empty slots in the message queue.
-    /// @note The result of this method is only valid when called from a producer.
+    /// Returns true if the message queue appears empty.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return The number of empty slots available for messages.
-    [[nodiscard]] SizeType emptySlots() const noexcept [[clang::nonblocking]];
+    /// @return true if no slots in the queue appear to be occupied or claimed.
+    [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
 
-    /// Returns true if the message queue is full.
-    /// @note The result of this method is only valid when called from a producer.
+    /// Returns true if the message queue appears full.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return true if the all slots in the queue are occupied.
+    /// @return true if all slots in the queue appear to be occupied or claimed.
     [[nodiscard]] bool isFull() const noexcept [[clang::nonblocking]];
 
-    /// Returns the number of occupied slots in the message queue.
-    /// @note The result of this method is only accurate when called from the consumer.
-    /// @return The number of occupied slots containing messages.
-    [[nodiscard]] SizeType occupiedSlots() const noexcept [[clang::nonblocking]];
+    /// Returns an estimate of the number of empty or unclaimed slots in the message queue.
+    /// @note The returned value is a transient snapshot and may become stale immediately after return.
+    /// @return The estimated number of empty or unclaimed slots.
+    [[nodiscard]] SizeType emptySlots() const noexcept [[clang::nonblocking]];
 
-    /// Returns true if the message queue is empty.
-    /// @note The result of this method is only accurate when called from the consumer.
-    /// @return true if all slots in the queue are empty.
-    [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
+    /// Returns an estimate of the number of occupied or claimed slots in the message queue.
+    /// @note The returned value is a transient snapshot and may become stale immediately after return.
+    /// @return The estimated number of occupied or claimed slots.
+    [[nodiscard]] SizeType occupiedSlots() const noexcept [[clang::nonblocking]];
 
     // MARK: Enqueuing Messages
 
@@ -274,38 +272,39 @@ inline MessageQueue<N, C>::MessageQueue() noexcept {
     }
 }
 
-// MARK: Buffer Usage
+// MARK: Statistics
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline auto MessageQueue<N, C>::emptySlots() const noexcept -> SizeType {
+inline bool MessageQueue<N, C>::isEmpty() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_acquire);
-    return N - (writePos - readPos);
+    const auto readPos = readPosition_.load(std::memory_order_relaxed);
+    return writePos == readPos;
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline bool MessageQueue<N, C>::isFull() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_acquire);
+    const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return (writePos - readPos) == N;
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
-    const auto writePos = writePosition_.load(std::memory_order_acquire);
+inline auto MessageQueue<N, C>::emptySlots() const noexcept -> SizeType {
+    const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return writePos - readPos;
+    const auto occupied = std::min(writePos - readPos, N);
+    return N - occupied;
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline bool MessageQueue<N, C>::isEmpty() const noexcept {
-    const auto writePos = writePosition_.load(std::memory_order_acquire);
+inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
+    const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return writePos == readPos;
+    return std::min(writePos - readPos, N);
 }
 
 // MARK: Enqueuing Messages

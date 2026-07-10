@@ -79,7 +79,7 @@ class MessageQueue final {
     /// Destroys the message queue and releases all associated resources.
     ~MessageQueue() noexcept = default;
 
-    // MARK: Buffer Information
+    // MARK: Slot Count and Capacity
 
     /// The number of slots in the message queue.
     static constexpr auto slotCount = N;
@@ -87,27 +87,27 @@ class MessageQueue final {
     /// The capacity of a single slot in the message queue in bytes.
     static constexpr auto slotCapacity = C;
 
-    // MARK: Buffer Usage
+    // MARK: Statistics
 
-    /// Returns an estimate of the number of empty or unclaimed slots in the message queue.
+    /// Returns true if the message queue appears empty.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return The estimated number of empty or unclaimed slots.
-    [[nodiscard]] SizeType emptySlots() const noexcept [[clang::nonblocking]];
+    /// @return true if no slots in the queue appear to be occupied or claimed.
+    [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
 
     /// Returns true if the message queue appears full.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
     /// @return true if all slots in the queue appear to be occupied or claimed.
     [[nodiscard]] bool isFull() const noexcept [[clang::nonblocking]];
 
+    /// Returns an estimate of the number of empty or unclaimed slots in the message queue.
+    /// @note The returned value is a transient snapshot and may become stale immediately after return.
+    /// @return The estimated number of empty or unclaimed slots.
+    [[nodiscard]] SizeType emptySlots() const noexcept [[clang::nonblocking]];
+
     /// Returns an estimate of the number of occupied or claimed slots in the message queue.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
     /// @return The estimated number of occupied or claimed slots.
     [[nodiscard]] SizeType occupiedSlots() const noexcept [[clang::nonblocking]];
-
-    /// Returns true if the message queue appears empty.
-    /// @note The returned value is a transient snapshot and may become stale immediately after return.
-    /// @return true if no slots in the queue appear to be occupied or claimed.
-    [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
 
     // MARK: Enqueuing Messages
 
@@ -259,15 +259,14 @@ constexpr MessageQueue<N, C>::MessageQueue() noexcept {
     }
 }
 
-// MARK: Buffer Usage
+// MARK: Statistics
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline auto MessageQueue<N, C>::emptySlots() const noexcept -> SizeType {
+inline bool MessageQueue<N, C>::isEmpty() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    const auto occupied = std::min(writePos - readPos, N);
-    return N - occupied;
+    return writePos == readPos;
 }
 
 template <std::size_t N, std::size_t C>
@@ -280,18 +279,19 @@ inline bool MessageQueue<N, C>::isFull() const noexcept {
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
+inline auto MessageQueue<N, C>::emptySlots() const noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return std::min(writePos - readPos, N);
+    const auto occupied = std::min(writePos - readPos, N);
+    return N - occupied;
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
-inline bool MessageQueue<N, C>::isEmpty() const noexcept {
+inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return writePos == readPos;
+    return std::min(writePos - readPos, N);
 }
 
 // MARK: Enqueuing Messages

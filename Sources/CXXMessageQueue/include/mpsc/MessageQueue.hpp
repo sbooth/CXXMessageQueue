@@ -90,24 +90,22 @@ class MessageQueue final {
     // MARK: Buffer Usage
 
     /// Returns the number of empty slots in the message queue.
-    /// @note The result of this method is only valid when called from a producer.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
     /// @return The number of empty slots available for messages.
     [[nodiscard]] SizeType emptySlots() const noexcept [[clang::nonblocking]];
 
     /// Returns true if the message queue is full.
-    /// @note The result of this method is only valid when called from a producer.
     /// @note The returned value is a transient snapshot and may become stale immediately after return.
     /// @return true if the all slots in the queue are occupied.
     [[nodiscard]] bool isFull() const noexcept [[clang::nonblocking]];
 
     /// Returns the number of occupied slots in the message queue.
-    /// @note The result of this method is only accurate when called from the consumer.
+    /// @note The returned value is a transient snapshot and may become stale immediately after return.
     /// @return The number of occupied slots containing messages.
     [[nodiscard]] SizeType occupiedSlots() const noexcept [[clang::nonblocking]];
 
     /// Returns true if the message queue is empty.
-    /// @note The result of this method is only accurate when called from the consumer.
+    /// @note The returned value is a transient snapshot and may become stale immediately after return.
     /// @return true if all slots in the queue are empty.
     [[nodiscard]] bool isEmpty() const noexcept [[clang::nonblocking]];
 
@@ -267,7 +265,7 @@ template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline auto MessageQueue<N, C>::emptySlots() const noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_acquire);
+    const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return N - (writePos - readPos);
 }
 
@@ -275,14 +273,14 @@ template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline bool MessageQueue<N, C>::isFull() const noexcept {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_acquire);
+    const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return (writePos - readPos) == N;
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
-    const auto writePos = writePosition_.load(std::memory_order_acquire);
+    const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return writePos - readPos;
 }
@@ -290,7 +288,7 @@ inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
 inline bool MessageQueue<N, C>::isEmpty() const noexcept {
-    const auto writePos = writePosition_.load(std::memory_order_acquire);
+    const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
     return writePos == readPos;
 }

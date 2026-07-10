@@ -145,7 +145,7 @@ class MessageQueue final {
     /// @tparam Args The types to dequeue.
     /// @param args On return, the message values copied from the queue.
     /// @return true if the message values were successfully copied, false if the queue is empty or the slot contains
-    /// insufficient data.
+    /// insufficient or excess data.
     template <ValueLike... Args>
         requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
     bool dequeue(Args &...args) noexcept [[clang::nonblocking]];
@@ -357,7 +357,7 @@ inline bool MessageQueue<N, C>::dequeue(Args &...args) noexcept {
     }
 
     return consumeReadableSlot([&](std::span<const unsigned char> data) noexcept -> bool {
-        if (data.size() < totalSize) [[unlikely]] {
+        if (data.size() != totalSize) [[unlikely]] {
             return false;
         }
         detail::deserialize(data, args...);

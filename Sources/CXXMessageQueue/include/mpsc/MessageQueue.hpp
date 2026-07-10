@@ -266,6 +266,7 @@ template <std::size_t N, std::size_t C>
 inline auto MessageQueue<N, C>::emptySlots() const noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
+    const auto occupied = std::min(writePos - readPos, N);
     return N - (writePos - readPos);
 }
 
@@ -282,7 +283,7 @@ template <std::size_t N, std::size_t C>
 inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
     const auto writePos = writePosition_.load(std::memory_order_relaxed);
     const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return writePos - readPos;
+    return std::min(writePos - readPos, N);
 }
 
 template <std::size_t N, std::size_t C>

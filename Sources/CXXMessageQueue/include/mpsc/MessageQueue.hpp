@@ -118,7 +118,7 @@ class MessageQueue final {
     /// @param message A span containing the message data to copy.
     /// @return true if the message was successfully enqueued, false if the queue is full or the slot capacity is
     /// insufficient.
-    bool enqueue(std::span<const unsigned char> message) noexcept [[clang::nonblocking]];
+    [[nodiscard]] bool enqueue(std::span<const unsigned char> message) noexcept [[clang::nonblocking]];
 
     /// Enqueues message values in the next available slot and advances the write position.
     /// @note This method is only safe to call from a producer.
@@ -128,7 +128,7 @@ class MessageQueue final {
     /// is insufficient.
     template <ValueLike... Args>
         requires(sizeof...(Args) > 0)
-    bool enqueue(const Args &...args) noexcept [[clang::nonblocking]];
+    [[nodiscard]] bool enqueue(const Args &...args) noexcept [[clang::nonblocking]];
 
     // MARK: Dequeuing Messages
 
@@ -138,7 +138,7 @@ class MessageQueue final {
     /// @param written On return, the number of bytes copied from the queue to the buffer.
     /// @return true if a message was successfully dequeued, false if the queue is empty or the buffer capacity is
     /// insufficient.
-    bool dequeue(std::span<unsigned char> buffer, SizeType &written) noexcept [[clang::nonblocking]];
+    [[nodiscard]] bool dequeue(std::span<unsigned char> buffer, SizeType &written) noexcept [[clang::nonblocking]];
 
     /// Dequeues message values from the first occupied slot and advances the read position.
     /// @note This method is only safe to call from the consumer.
@@ -148,7 +148,7 @@ class MessageQueue final {
     /// insufficient or excess data.
     template <ValueLike... Args>
         requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
-    bool dequeue(Args &...args) noexcept [[clang::nonblocking]];
+    [[nodiscard]] bool dequeue(Args &...args) noexcept [[clang::nonblocking]];
 
     // MARK: Peeking
 

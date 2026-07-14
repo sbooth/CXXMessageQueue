@@ -453,7 +453,6 @@ inline bool MessageQueue<N, C>::withWritableSlot(W &&writer) noexcept {
             // Attempt to claim the slot
             if (writePosition_.compare_exchange_weak(writePos, writePos + 1, std::memory_order_relaxed,
                                                      std::memory_order_relaxed)) {
-
                 std::span<unsigned char> buf{slot.data_, C};
                 const auto bytesWritten = std::invoke(std::forward<W>(writer), buf);
                 slot.dataSize_ = bytesWritten;

@@ -16,6 +16,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
 #include <span>
 #include <type_traits>

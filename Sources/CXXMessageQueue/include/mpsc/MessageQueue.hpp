@@ -182,7 +182,7 @@ class MessageQueue final {
 
   private:
     /// A message queue slot.
-    struct Slot {
+    struct alignas(std::hardware_destructive_interference_size) Slot {
         /// The slot's generation.
         AtomicSizeType generation_{0};
         /// The number of valid bytes in data_

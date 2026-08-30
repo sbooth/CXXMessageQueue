@@ -58,7 +58,7 @@ concept Reader = std::invocable<F, std::span<const unsigned char>> &&
 ///
 /// This message queue performs raw byte copies; it does not provide serialization.
 template <std::size_t N, std::size_t C>
-    requires ValidPowerOfTwo<N> && ValidPowerOfTwo<C>
+    requires ValidPowerOfTwo<N>
 class MessageQueue final {
   public:
     /// Unsigned integer type.

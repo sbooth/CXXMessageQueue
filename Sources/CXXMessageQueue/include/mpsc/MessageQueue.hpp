@@ -123,10 +123,9 @@ class MessageQueue final {
     /// @note This method is only safe to call from a producer.
     /// @tparam Args The types to enqueue.
     /// @param args The message values to enqueue.
-    /// @return true if the message values were successfully enqueued, false if the queue is full or the slot capacity
-    /// is insufficient.
+    /// @return true if the message values were successfully enqueued, false if the queue is full.
     template <ValueLike... Args>
-        requires(sizeof...(Args) > 0)
+        requires(sizeof...(Args) > 0) && ((sizeof(Args) + ...) <= C)
     [[nodiscard]] bool enqueue(const Args &...args) noexcept [[clang::nonblocking]];
 
     // MARK: Dequeuing Messages
@@ -146,7 +145,8 @@ class MessageQueue final {
     /// @return true if the message values were successfully copied, false if the queue is empty or the slot contains
     /// insufficient or excess data.
     template <ValueLike... Args>
-        requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
+        requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...) &&
+                ((sizeof(Args) + ...) <= C)
     [[nodiscard]] bool dequeue(Args &...args) noexcept [[clang::nonblocking]];
 
     // MARK: Peeking
@@ -165,7 +165,8 @@ class MessageQueue final {
     /// @return true if the message values were successfully copied, false if the message queue is empty or the slot
     /// contains insufficient data.
     template <ValueLike... Args>
-        requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
+        requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...) &&
+                ((sizeof(Args) + ...) <= C)
     [[nodiscard]] bool peek(Args &...args) const noexcept [[clang::nonblocking]];
 
     // MARK: Discarding Messages
@@ -326,13 +327,9 @@ inline bool MessageQueue<N, C>::enqueue(std::span<const unsigned char> message) 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
                                template <ValueLike... Args>
-                 requires(sizeof...(Args) > 0)
+                 requires(sizeof...(Args) > 0) && ((sizeof(Args) + ...) <= C)
 inline bool MessageQueue<N, C>::enqueue(const Args &...args) noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
-    if (totalSize > C) [[unlikely]] {
-        return false;
-    }
-
     return withWritableSlot([&](std::span<unsigned char> buffer) noexcept {
         detail::serialize(buffer, args...);
         return totalSize;
@@ -362,13 +359,10 @@ inline bool MessageQueue<N, C>::dequeue(std::span<unsigned char> buffer, SizeTyp
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
                                template <ValueLike... Args>
-                 requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
+                 requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...) &&
+                         ((sizeof(Args) + ...) <= C)
 inline bool MessageQueue<N, C>::dequeue(Args &...args) noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
-    if (totalSize > C) [[unlikely]] {
-        return false;
-    }
-
     return consumeReadableSlot([&](std::span<const unsigned char> data) noexcept -> bool {
         if (data.size() != totalSize) [[unlikely]] {
             return false;
@@ -399,13 +393,10 @@ inline bool MessageQueue<N, C>::peek(std::span<unsigned char> buffer, SizeType &
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
                                template <ValueLike... Args>
-                 requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...)
+                 requires(sizeof...(Args) > 0) && (std::assignable_from<Args &, const Args &> && ...) &&
+                         ((sizeof(Args) + ...) <= C)
 inline bool MessageQueue<N, C>::peek(Args &...args) const noexcept {
     constexpr auto totalSize = (sizeof(Args) + ...);
-    if (totalSize > C) [[unlikely]] {
-        return false;
-    }
-
     return peekReadableSlot([&](std::span<const unsigned char> data) noexcept -> bool {
         if (data.size() < totalSize) [[unlikely]] {
             return false;

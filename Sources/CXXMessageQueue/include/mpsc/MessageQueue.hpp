@@ -73,8 +73,9 @@ class MessageQueue final {
 
     MessageQueue(const MessageQueue &) = delete;
     MessageQueue &operator=(const MessageQueue &) = delete;
-    MessageQueue(MessageQueue &&) noexcept = delete;
-    MessageQueue &operator=(MessageQueue &&) noexcept = delete;
+
+    MessageQueue(MessageQueue &&) = delete;
+    MessageQueue &operator=(MessageQueue &&) = delete;
 
     /// Destroys the message queue and releases all associated resources.
     ~MessageQueue() noexcept = default;

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstring>
@@ -448,6 +449,7 @@ inline bool MessageQueue<N, C>::withWritableSlot(W &&writer) noexcept {
                                                      std::memory_order_relaxed)) {
                 std::span<unsigned char> buf{slot.data_, C};
                 const auto bytesWritten = std::invoke(std::forward<W>(writer), buf);
+                assert(bytesWritten <= C && "Writer overflowed the slot");
                 slot.dataSize_ = bytesWritten;
 
                 slot.generation_.store(writePos + 1, std::memory_order_release);

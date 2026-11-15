@@ -176,7 +176,9 @@ class MessageQueue final {
     /// @return The number of messages actually discarded.
     [[nodiscard]] SizeType discard(SizeType count = 1) noexcept [[clang::nonblocking]];
 
-    /// Discards all messages without copying and advances the read position.
+    /// Discards the messages present at the time of the call without copying and advances the read position.
+    ///
+    /// Messages enqueued while the drain is in progress are not guaranteed to be discarded.
     /// @note This method is only safe to call from the consumer.
     /// @return The number of messages discarded.
     [[nodiscard]] SizeType drain() noexcept [[clang::nonblocking]];

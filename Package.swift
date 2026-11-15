@@ -20,7 +20,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "CXXMessageQueue"
+            name: "CXXMessageQueue",
+            cxxSettings: [
+                .define("NDEBUG", .when(configuration: .release)),
+            ]
         ),
         .testTarget(
             name: "CXXMessageQueueTests",

@@ -300,23 +300,9 @@ inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
     /// The maximum number of retries to obtain a consistent snapshot of the positions.
     constexpr auto maxSnapshotAttempts = 8;
 
-    // The two positions can't be loaded atomically, and both may advance between the loads when this is
-    // called concurrently with producers and the consumer. Naively subtracting two unrelated snapshots is
-    // wrong in both directions:
-    //
-    //  - Write position first: the consumer can advance past the stale write position before the read
-    //    position is loaded. The unsigned difference wraps and a nearly empty queue is reported as full.
-    //  - Read position first: the difference counts every message enqueued while the caller was between
-    //    the loads, even though the consumer has long since dequeued most of them.
-    //
-    // Instead the read position is loaded on both sides of the write position. Positions only ever
-    // increase, so if both loads agree the read position did not change in between and the difference
-    // is the exact number of occupied or claimed slots at the instant the write position was loaded.
     auto readPos = readPosition_.load(std::memory_order_relaxed);
     auto writePos = writePosition_.load(std::memory_order_relaxed);
 
-    // A retry is needed only if the consumer dequeued a message in the few nanoseconds between the loads.
-    // The retries are bounded to keep the function wait-free.
     for (auto attempt = 0; attempt < maxSnapshotAttempts; ++attempt) {
         const auto currentReadPos = readPosition_.load(std::memory_order_relaxed);
         if (currentReadPos == readPos) [[likely]] {
@@ -326,11 +312,12 @@ inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
         writePos = writePosition_.load(std::memory_order_relaxed);
     }
 
-    // The read position was loaded before the write position and never passes it, so the subtraction
-    // cannot wrap. The difference may exceed N: the consumer releases a slot before it publishes the new
-    // read position, so a producer can briefly claim position readPos + N, and if the retries above were
-    // exhausted the snapshot is an overestimate.
-    return std::min(writePos - readPos, N);
+    const auto occupied = writePos - readPos;
+    if (static_cast<std::make_signed_t<SizeType>>(occupied) < 0) [[unlikely]] {
+        return 0;
+    }
+
+    return std::min(occupied, N);
 }
 
 // MARK: Enqueuing Messages

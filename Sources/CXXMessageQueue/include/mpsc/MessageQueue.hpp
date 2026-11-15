@@ -16,7 +16,6 @@
 #include <cstddef>
 #include <cstring>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <ranges>
 #include <span>
@@ -179,7 +178,9 @@ class MessageQueue final {
     /// @return The number of messages actually discarded.
     [[nodiscard]] SizeType discard(SizeType count = 1) noexcept [[clang::nonblocking]];
 
-    /// Discards all messages without copying and advances the read position.
+    /// Discards the messages present at the time of the call without copying and advances the read position.
+    ///
+    /// Messages enqueued while the drain is in progress are not guaranteed to be discarded.
     /// @note This method is only safe to call from the consumer.
     /// @return The number of messages discarded.
     [[nodiscard]] SizeType drain() noexcept [[clang::nonblocking]];
@@ -426,7 +427,9 @@ inline auto MessageQueue<N, C>::discard(SizeType count) noexcept -> SizeType {
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
 inline auto MessageQueue<N, C>::drain() noexcept -> SizeType {
-    return discard(std::numeric_limits<SizeType>::max());
+    const auto readPos = readPosition_.load(std::memory_order_relaxed);
+    const auto writePos = writePosition_.load(std::memory_order_relaxed);
+    return discard(writePos - readPos);
 }
 
 // MARK: Helpers

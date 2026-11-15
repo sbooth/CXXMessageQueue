@@ -14,7 +14,6 @@
 #include <concepts>
 #include <cstring>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -424,7 +423,9 @@ inline auto MessageQueue<N, C>::discard(SizeType count) noexcept -> SizeType {
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
 inline auto MessageQueue<N, C>::drain() noexcept -> SizeType {
-    return discard(std::numeric_limits<SizeType>::max());
+    const auto readPos = readPosition_.load(std::memory_order_relaxed);
+    const auto writePos = writePosition_.load(std::memory_order_relaxed);
+    return discard(writePos - readPos);
 }
 
 // MARK: Helpers

@@ -12,11 +12,12 @@
 #include <atomic>
 #include <bit>
 #include <concepts>
+#include <cstddef>
 #include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
-#include <optional>
+#include <ranges>
 #include <span>
 #include <type_traits>
 #include <utility>

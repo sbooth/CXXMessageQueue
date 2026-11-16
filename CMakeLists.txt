@@ -1,36 +1,25 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.21)
 project(CXXMessageQueue VERSION 0.6.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(CXXMessageQueue
-    Sources/CXXMessageQueue/mpsc/MessageQueue.cpp
-    Sources/CXXMessageQueue/include/mpsc/MessageQueue.hpp
-)
+add_library(CXXMessageQueue INTERFACE)
 add_library(mpsc::MessageQueue ALIAS CXXMessageQueue)
+set_target_properties(CXXMessageQueue PROPERTIES EXPORT_NAME MessageQueue)
 
-target_include_directories(CXXMessageQueue PUBLIC
+target_compile_features(CXXMessageQueue INTERFACE cxx_std_20)
+
+target_include_directories(CXXMessageQueue INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Sources/CXXMessageQueue/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-if(MSVC)
-    target_compile_options(CXXMessageQueue PRIVATE /W4)
-else()
-    target_compile_options(CXXMessageQueue PRIVATE -Wall -Wextra)
-endif()
+install(TARGETS CXXMessageQueue EXPORT CXXMessageQueueTargets)
 
-include(GNUInstallDirs)
-
-install(TARGETS CXXMessageQueue
-    EXPORT CXXMessageQueueTargets
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-install(DIRECTORY Sources/CXXMessageQueue/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY Sources/CXXMessageQueue/include/mpsc DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 install(EXPORT CXXMessageQueueTargets
     FILE CXXMessageQueueTargets.cmake
@@ -38,9 +27,9 @@ install(EXPORT CXXMessageQueueTargets
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CXXMessageQueue
 )
 
-option(BUILD_TESTING "Build tests" ON)
+option(CXXMessageQueue_BUILD_TESTING "Build the CXXMessageQueue tests" ${PROJECT_IS_TOP_LEVEL})
 
-if(BUILD_TESTING)
+if(CXXMessageQueue_BUILD_TESTING)
     find_package(GTest REQUIRED)
 
     enable_testing()
@@ -53,13 +42,19 @@ if(BUILD_TESTING)
             GTest::gtest_main
     )
 
+    if(MSVC)
+        target_compile_options(run_tests PRIVATE /W4)
+    else()
+        target_compile_options(run_tests PRIVATE -Wall -Wextra)
+    endif()
+
     include(GoogleTest)
     gtest_discover_tests(run_tests)
 endif()
 
-option(BUILD_BENCHMARK "Build benchmark" OFF)
+option(CXXMessageQueue_BUILD_BENCHMARK "Build the CXXMessageQueue benchmark" off)
 
-if(BUILD_BENCHMARK)
+if(CXXMessageQueue_BUILD_BENCHMARK)
     find_package(benchmark REQUIRED)
 
     add_executable(benchmark test/message_queue_benchmark.cpp)
@@ -69,4 +64,10 @@ if(BUILD_BENCHMARK)
             mpsc::MessageQueue
             benchmark::benchmark
     )
+
+    if(MSVC)
+        target_compile_options(run_tests PRIVATE /W4)
+    else()
+        target_compile_options(run_tests PRIVATE -Wall -Wextra)
+    endif()
 endif()

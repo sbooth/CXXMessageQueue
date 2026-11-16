@@ -382,13 +382,17 @@ TEST(MessageQueueStressTest, DrainIsBounded) {
     constexpr std::size_t Slots = 64;
     auto queue = std::make_unique<MessageQueue<Slots, 8>>();
     std::atomic<bool> stop{false};
+    // The number of messages successfully enqueued by all producers
+    std::atomic<std::uint64_t> enqueued{0};
 
     std::vector<std::thread> producers;
     for (int id = 0; id < 2; ++id) {
         producers.emplace_back([&] {
             std::uint64_t value = 0;
             while (!stop.load(std::memory_order_relaxed)) {
-                if (!queue->enqueue(value)) {
+                if (queue->enqueue(value)) {
+                    enqueued.fetch_add(1);
+                } else {
                     std::this_thread::yield();
                 }
                 ++value;
@@ -398,16 +402,39 @@ TEST(MessageQueueStressTest, DrainIsBounded) {
 
     // Each call must return after visiting at most one queue's worth of slots
     // even though the producers never stop refilling the queue.
+    std::uint64_t drained = 0;
+    std::uint64_t enqueuedBeforeLastDrain = 0;
+    bool unbounded = false;
     for (int i = 0; i < 2000; ++i) {
-        EXPECT_LE(queue->drain(), Slots);
+        // Don't drain until the producers have enqueued something since the previous drain.
+        // Without this every drain could run before the producers start, or between their
+        // time slices, and the test would pass having only ever drained an empty queue.
+        std::uint64_t enqueuedNow;
+        while ((enqueuedNow = enqueued.load()) == enqueuedBeforeLastDrain) {
+            std::this_thread::yield();
+        }
+        enqueuedBeforeLastDrain = enqueuedNow;
+
+        const auto count = queue->drain();
+        if (count > Slots) {
+            unbounded = true;
+        }
+        drained += count;
     }
+    EXPECT_FALSE(unbounded);
+    // Every drain was preceded by at least one new message, so the drains can't all have been empty
+    EXPECT_GT(drained, 0U);
 
     stop.store(true);
     for (auto &th : producers) {
         th.join();
     }
-    EXPECT_LE(queue->drain(), Slots);
+
+    const auto remaining = queue->drain();
+    EXPECT_LE(remaining, Slots);
     EXPECT_TRUE(queue->isEmpty());
+    // Nothing was lost or discarded twice
+    EXPECT_EQ(drained + remaining, enqueued.load());
 }
 
 // ============================================================================
@@ -489,6 +516,10 @@ TEST(MessageQueueStressTest, StatisticsFromConsumerAreExact) {
         for (std::uint64_t i = 0; i < Messages; ++i) {
             // Count the message before enqueuing so `sent` never lags the queue
             sent.fetch_add(1, std::memory_order_seq_cst);
+            // The queue advances its write position with relaxed ordering, so a thread that observes
+            // the new position is not thereby guaranteed to observe the increment above. This fence
+            // pairs with the acquire fence in the consumer to order the count through the queue update.
+            std::atomic_thread_fence(std::memory_order_release);
             while (!queue->enqueue(i)) {
                 std::this_thread::yield();
             }
@@ -500,6 +531,9 @@ TEST(MessageQueueStressTest, StatisticsFromConsumerAreExact) {
     while (received < Messages) {
         const auto occupied = queue->occupiedSlots();
         const auto empty = queue->emptySlots();
+        // Synchronizes with the producer's release fence preceding whichever write position
+        // update was observed above, making the corresponding increment of `sent` visible
+        std::atomic_thread_fence(std::memory_order_acquire);
         // Load `sent` after sampling: it can only have grown since
         const auto upperBound = sent.load(std::memory_order_seq_cst) - received;
         if (occupied > upperBound || occupied > 1024 || empty > 1024) {
@@ -553,17 +587,31 @@ TEST(MessageQueueStressTest, StatisticsFromObserverStayWithinCapacity) {
         }
     });
 
+    // Keep sampling until enough samples have been taken and enough messages have made the
+    // round trip in the meantime. A fixed number of samples could complete before the workers
+    // run, in which case every sample would describe the initial empty queue.
+    constexpr std::uint64_t MinSamples = 2000000;
+    constexpr std::uint64_t MinRoundTrips = 1000;
+
     std::size_t maxOccupied = 0;
     std::size_t maxEmpty = 0;
-    for (int i = 0; i < 2000000; ++i) {
-        maxOccupied = std::max(maxOccupied, queue->occupiedSlots());
-        maxEmpty = std::max(maxEmpty, queue->emptySlots());
-    }
+    std::uint64_t samples = 0;
+    std::uint64_t roundTrips = 0;
+    const auto acknowledgedAtStart = acknowledged.load();
+    do {
+        for (int i = 0; i < 1000; ++i) {
+            maxOccupied = std::max(maxOccupied, queue->occupiedSlots());
+            maxEmpty = std::max(maxEmpty, queue->emptySlots());
+        }
+        samples += 1000;
+        roundTrips = acknowledged.load() - acknowledgedAtStart;
+    } while (samples < MinSamples || roundTrips < MinRoundTrips);
 
     stop.store(true);
     consumer.join();
     producer.join();
 
+    EXPECT_GE(roundTrips, MinRoundTrips);
     EXPECT_LE(maxOccupied, Slots);
     EXPECT_LE(maxEmpty, Slots);
 

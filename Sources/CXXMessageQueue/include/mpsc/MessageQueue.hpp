@@ -282,34 +282,45 @@ inline MessageQueue<N, C>::MessageQueue() noexcept {
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
 inline bool MessageQueue<N, C>::isEmpty() const noexcept {
-    const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return writePos == readPos;
+    return occupiedSlots() == 0;
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
 inline bool MessageQueue<N, C>::isFull() const noexcept {
-    const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return (writePos - readPos) == N;
+    return occupiedSlots() == N;
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
 inline auto MessageQueue<N, C>::emptySlots() const noexcept -> SizeType {
-    const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    const auto occupied = std::min(writePos - readPos, N);
-    return N - occupied;
+    return N - occupiedSlots();
 }
 
 template <std::size_t N, std::size_t C>
     requires ValidPowerOfTwo<N> && (C > 0)
 inline auto MessageQueue<N, C>::occupiedSlots() const noexcept -> SizeType {
-    const auto writePos = writePosition_.load(std::memory_order_relaxed);
-    const auto readPos = readPosition_.load(std::memory_order_relaxed);
-    return std::min(writePos - readPos, N);
+    /// The maximum number of retries to obtain a consistent snapshot of the positions.
+    constexpr auto maxSnapshotAttempts = 8;
+
+    auto readPos = readPosition_.load(std::memory_order_relaxed);
+    auto writePos = writePosition_.load(std::memory_order_relaxed);
+
+    for (auto attempt = 0; attempt < maxSnapshotAttempts; ++attempt) {
+        const auto currentReadPos = readPosition_.load(std::memory_order_relaxed);
+        if (currentReadPos == readPos) [[likely]] {
+            break;
+        }
+        readPos = currentReadPos;
+        writePos = writePosition_.load(std::memory_order_relaxed);
+    }
+
+    const auto occupied = writePos - readPos;
+    if (static_cast<std::make_signed_t<SizeType>>(occupied) < 0) [[unlikely]] {
+        return 0;
+    }
+
+    return std::min(occupied, N);
 }
 
 // MARK: Enqueuing Messages

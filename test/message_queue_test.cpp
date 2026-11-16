@@ -7,7 +7,13 @@
 
 #include "mpsc/MessageQueue.hpp"
 
-#include <numeric>
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -26,7 +32,7 @@ struct InvalidNonStandardLayout {
     int x;
 
   private:
-    int y; // Mixing access specifiers breaches standard layout rules in older standards
+    [[maybe_unused]] int y; // Mixing access specifiers breaks standard layout
 };
 
 // ============================================================================
@@ -46,6 +52,7 @@ TEST(MessageQueueStaticTest, ConceptConstraints) {
     static_assert(ValueLike<int>);
     static_assert(ValueLike<ValidStruct>);
     static_assert(!ValueLike<int *>);             // Pointers rejected
+    static_assert(!ValueLike<InvalidNonStandardLayout>);
     static_assert(!ValueLike<std::vector<char>>); // Ranges rejected
 }
 
@@ -62,7 +69,7 @@ TEST(MessageQueueTest, InitialStateAndAttributes) {
 
     // Consumer-safe checks on empty queue
     EXPECT_TRUE(queue.isEmpty());
-    EXPECT_EQ(queue.occupiedSlots(), 0);
+    EXPECT_EQ(queue.occupiedSlots(), 0U);
 
     // Producer-safe checks on empty queue
     EXPECT_FALSE(queue.isFull());
@@ -81,7 +88,7 @@ TEST(MessageQueueTest, RawByteLifecycle) {
     // 1. Enqueue
     ASSERT_TRUE(queue.enqueue(sendData));
     EXPECT_FALSE(queue.isEmpty());
-    EXPECT_EQ(queue.occupiedSlots(), 1);
+    EXPECT_EQ(queue.occupiedSlots(), 1U);
 
     // 2. Peek Verification
     ASSERT_TRUE(queue.peek(recvBuffer, bytesWritten));
@@ -89,7 +96,7 @@ TEST(MessageQueueTest, RawByteLifecycle) {
     EXPECT_EQ(std::memcmp(recvBuffer.data(), sendData.data(), bytesWritten), 0);
 
     // Ensure peek didn't consume anything
-    EXPECT_EQ(queue.occupiedSlots(), 1);
+    EXPECT_EQ(queue.occupiedSlots(), 1U);
 
     // 3. Dequeue Verification
     std::fill(recvBuffer.begin(), recvBuffer.end(), 0);
@@ -123,7 +130,7 @@ TEST(MessageQueueTest, FailureAndBoundaryCases) {
 
     // Queue should now report completely full
     EXPECT_TRUE(queue.isFull());
-    EXPECT_EQ(queue.emptySlots(), 0);
+    EXPECT_EQ(queue.emptySlots(), 0U);
 
     // Reject enqueue on full state
     EXPECT_FALSE(queue.enqueue(std::span<const unsigned char>(validBuffer.data(), 1)));
@@ -134,7 +141,7 @@ TEST(MessageQueueTest, FailureAndBoundaryCases) {
     // Dequeue safely with properly sized buffer
     std::array<unsigned char, 4> outputBuffer{};
     EXPECT_TRUE(queue.dequeue(outputBuffer, written));
-    EXPECT_EQ(written, 2);
+    EXPECT_EQ(written, 2U);
 }
 
 // ============================================================================
@@ -188,7 +195,7 @@ TEST(MessageQueueTest, GenerationWrapAround) {
     for (int i = 0; i < 10; ++i) {
         ASSERT_TRUE(queue.enqueue(token));
         ASSERT_TRUE(queue.dequeue(outToken, written));
-        EXPECT_EQ(written, 4);
+        EXPECT_EQ(written, 4U);
         EXPECT_EQ(outToken[0], 7);
     }
 }
@@ -220,14 +227,22 @@ TEST(MessageQueueStressTest, ConcurrencyMPSC) {
     static_assert(ValueLike<Packet>);
 
     // 1. Launch Consumer Thread
+    // Messages from one producer must arrive in the order that producer enqueued them
+    std::array<int, NumProducers> lastSequence{};
+    bool orderingViolated = false;
+
     std::thread consumerThread([&]() {
-        int emptySpins = 0;
         while (activeProducers.load(std::memory_order_relaxed) > 0 || !queue.isEmpty()) {
             Packet pkt{};
             if (queue.dequeue(pkt)) {
                 totalSumReceived += pkt.sequence;
                 itemsSuccessfullyRead.fetch_add(1, std::memory_order_relaxed);
-                emptySpins = 0;
+                if (pkt.producerId < 0 || pkt.producerId >= NumProducers ||
+                    pkt.sequence != lastSequence[pkt.producerId] + 1) {
+                    orderingViolated = true;
+                } else {
+                    lastSequence[pkt.producerId] = pkt.sequence;
+                }
             } else {
                 // Yield briefly if queue yields a transient empty state
                 std::this_thread::yield();
@@ -271,6 +286,7 @@ TEST(MessageQueueStressTest, ConcurrencyMPSC) {
 
     // 3. Data Invariant Verification
     EXPECT_EQ(itemsSuccessfullyRead.load(), TotalMessages);
+    EXPECT_FALSE(orderingViolated);
 
     // Deduce what total mathematical sum of all messages should sequence to:
     // NumProducers * Sum(1 to MessagesPerProducer)
@@ -279,6 +295,434 @@ TEST(MessageQueueStressTest, ConcurrencyMPSC) {
     std::uint64_t totalExpectedSum = expectedSumPerProducer * NumProducers;
 
     EXPECT_EQ(totalSumReceived, totalExpectedSum);
+}
+
+// ============================================================================
+// 8. Partial Peek and Size Mismatches
+// ============================================================================
+TEST(MessageQueueTest, PeekPrefixAndSizeMismatch) {
+    MessageQueue<4, 16> queue;
+    const std::uint32_t header = 0xCAFEF00D;
+    const std::uint64_t body = 0x0123456789ABCDEF;
+    ASSERT_TRUE(queue.enqueue(header, body));
+
+    // A raw peek into a small buffer copies a prefix
+    std::array<unsigned char, 2> small{};
+    std::size_t written = 0;
+    ASSERT_TRUE(queue.peek(small, written));
+    EXPECT_EQ(written, small.size());
+    EXPECT_EQ(std::memcmp(small.data(), &header, small.size()), 0);
+
+    // A value peek may read a prefix of the message
+    std::uint32_t peekedHeader = 0;
+    ASSERT_TRUE(queue.peek(peekedHeader));
+    EXPECT_EQ(peekedHeader, header);
+
+    // A value dequeue requires an exact size match and leaves the message in place otherwise
+    std::uint32_t wrong = 0;
+    EXPECT_FALSE(queue.dequeue(wrong));
+    EXPECT_EQ(queue.occupiedSlots(), 1U);
+
+    std::uint32_t outHeader = 0;
+    std::uint64_t outBody = 0;
+    ASSERT_TRUE(queue.dequeue(outHeader, outBody));
+    EXPECT_EQ(outHeader, header);
+    EXPECT_EQ(outBody, body);
+
+    // Nothing left to peek
+    EXPECT_FALSE(queue.peek(peekedHeader));
+    EXPECT_FALSE(queue.peek(small, written));
+    EXPECT_EQ(written, 0U);
+}
+
+// ============================================================================
+// 9. Discard and Drain
+// ============================================================================
+TEST(MessageQueueTest, DiscardAndDrain) {
+    MessageQueue<8, 4> queue;
+
+    EXPECT_EQ(queue.discard(), 0U);
+    EXPECT_EQ(queue.drain(), 0U);
+
+    for (int i = 0; i < 6; ++i) {
+        ASSERT_TRUE(queue.enqueue(i));
+    }
+
+    EXPECT_EQ(queue.discard(), 1U);
+    EXPECT_EQ(queue.discard(2), 2U);
+    EXPECT_EQ(queue.discard(0), 0U);
+
+    int value = -1;
+    ASSERT_TRUE(queue.dequeue(value));
+    EXPECT_EQ(value, 3);
+
+    // Asking for more than is available discards what is there
+    EXPECT_EQ(queue.discard(100), 2U);
+    EXPECT_TRUE(queue.isEmpty());
+
+    // Drain a full queue that straddles the end of the slot array
+    for (int i = 0; i < 8; ++i) {
+        ASSERT_TRUE(queue.enqueue(i));
+    }
+    EXPECT_TRUE(queue.isFull());
+    EXPECT_EQ(queue.drain(), 8U);
+    EXPECT_TRUE(queue.isEmpty());
+    EXPECT_EQ(queue.emptySlots(), 8U);
+
+    // The queue remains usable
+    ASSERT_TRUE(queue.enqueue(42));
+    ASSERT_TRUE(queue.dequeue(value));
+    EXPECT_EQ(value, 42);
+}
+
+// ============================================================================
+// 10. Drain Terminates While Producers Are Active
+// ============================================================================
+TEST(MessageQueueStressTest, DrainIsBounded) {
+    constexpr std::size_t Slots = 64;
+    auto queue = std::make_unique<MessageQueue<Slots, 8>>();
+    std::atomic<bool> stop{false};
+    // The number of messages successfully enqueued by all producers
+    std::atomic<std::uint64_t> enqueued{0};
+
+    std::vector<std::thread> producers;
+    for (int id = 0; id < 2; ++id) {
+        producers.emplace_back([&] {
+            std::uint64_t value = 0;
+            while (!stop.load(std::memory_order_relaxed)) {
+                if (queue->enqueue(value)) {
+                    enqueued.fetch_add(1);
+                } else {
+                    std::this_thread::yield();
+                }
+                ++value;
+            }
+        });
+    }
+
+    // Each call must return after visiting at most one queue's worth of slots
+    // even though the producers never stop refilling the queue.
+    std::uint64_t drained = 0;
+    std::uint64_t enqueuedBeforeLastDrain = 0;
+    bool unbounded = false;
+    for (int i = 0; i < 2000; ++i) {
+        // Don't drain until the producers have enqueued something since the previous drain.
+        // Without this every drain could run before the producers start, or between their
+        // time slices, and the test would pass having only ever drained an empty queue.
+        std::uint64_t enqueuedNow;
+        while ((enqueuedNow = enqueued.load()) == enqueuedBeforeLastDrain) {
+            std::this_thread::yield();
+        }
+        enqueuedBeforeLastDrain = enqueuedNow;
+
+        const auto count = queue->drain();
+        if (count > Slots) {
+            unbounded = true;
+        }
+        drained += count;
+    }
+    EXPECT_FALSE(unbounded);
+    // Every drain was preceded by at least one new message, so the drains can't all have been empty
+    EXPECT_GT(drained, 0U);
+
+    stop.store(true);
+    for (auto &th : producers) {
+        th.join();
+    }
+
+    const auto remaining = queue->drain();
+    EXPECT_LE(remaining, Slots);
+    EXPECT_TRUE(queue->isEmpty());
+    // Nothing was lost or discarded twice
+    EXPECT_EQ(drained + remaining, enqueued.load());
+}
+
+// ============================================================================
+// 11. Variable-Size Payload Integrity Under Contention
+// ============================================================================
+TEST(MessageQueueStressTest, VariableSizePayloadIntegrity) {
+    constexpr std::size_t Capacity = 48;
+    // A small queue keeps it full most of the time, exercising the full and wrap-around paths
+    auto queue = std::make_unique<MessageQueue<8, Capacity>>();
+
+    constexpr int NumProducers = 3;
+    constexpr int MessagesPerProducer = 20000;
+
+    std::vector<std::thread> producers;
+    for (int id = 0; id < NumProducers; ++id) {
+        producers.emplace_back([&queue, id] {
+            std::array<unsigned char, Capacity> message{};
+            for (int seq = 0; seq < MessagesPerProducer; ++seq) {
+                // Layout: [producer id][sequence (4 bytes)][fill bytes derived from the sequence]
+                const std::size_t size = 5 + static_cast<std::size_t>(seq % (Capacity - 4));
+                message[0] = static_cast<unsigned char>(id);
+                std::memcpy(&message[1], &seq, sizeof seq);
+                for (std::size_t i = 5; i < size; ++i) {
+                    message[i] = static_cast<unsigned char>(seq + static_cast<int>(i));
+                }
+                while (!queue->enqueue(std::span<const unsigned char>{message.data(), size})) {
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+
+    std::array<int, NumProducers> nextSequence{};
+    std::array<unsigned char, Capacity> buffer{};
+    int received = 0;
+    int corrupted = 0;
+    while (received < NumProducers * MessagesPerProducer) {
+        std::size_t size = 0;
+        if (!queue->dequeue(buffer, size)) {
+            std::this_thread::yield();
+            continue;
+        }
+        ++received;
+
+        const int id = buffer[0];
+        int seq = -1;
+        std::memcpy(&seq, &buffer[1], sizeof seq);
+        bool ok = id < NumProducers && seq == nextSequence[static_cast<std::size_t>(id < NumProducers ? id : 0)] &&
+                  size == 5 + static_cast<std::size_t>(seq % (Capacity - 4));
+        for (std::size_t i = 5; ok && i < size; ++i) {
+            ok = buffer[i] == static_cast<unsigned char>(seq + static_cast<int>(i));
+        }
+        if (ok) {
+            ++nextSequence[static_cast<std::size_t>(id)];
+        } else {
+            ++corrupted;
+        }
+    }
+
+    for (auto &th : producers) {
+        th.join();
+    }
+
+    EXPECT_EQ(corrupted, 0);
+    EXPECT_TRUE(queue->isEmpty());
+}
+
+// ============================================================================
+// 12. Statistics Stay In Range Under Concurrency
+// ============================================================================
+TEST(MessageQueueStressTest, StatisticsFromConsumerAreExact) {
+    // Only the consumer advances the read position, so statistics sampled on the consumer's
+    // thread can never report more messages than have been enqueued but not yet dequeued.
+    auto queue = std::make_unique<MessageQueue<1024, 8>>();
+    constexpr std::uint64_t Messages = 200000;
+    std::atomic<std::uint64_t> sent{0};
+
+    std::thread producer([&] {
+        for (std::uint64_t i = 0; i < Messages; ++i) {
+            // Count the message before enqueuing so `sent` never lags the queue
+            sent.fetch_add(1, std::memory_order_seq_cst);
+            // The queue advances its write position with relaxed ordering, so a thread that observes
+            // the new position is not thereby guaranteed to observe the increment above. This fence
+            // pairs with the acquire fence in the consumer to order the count through the queue update.
+            std::atomic_thread_fence(std::memory_order_release);
+            while (!queue->enqueue(i)) {
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    std::uint64_t received = 0;
+    bool outOfRange = false;
+    while (received < Messages) {
+        const auto occupied = queue->occupiedSlots();
+        const auto empty = queue->emptySlots();
+        // Synchronizes with the producer's release fence preceding whichever write position
+        // update was observed above, making the corresponding increment of `sent` visible
+        std::atomic_thread_fence(std::memory_order_acquire);
+        // Load `sent` after sampling: it can only have grown since
+        const auto upperBound = sent.load(std::memory_order_seq_cst) - received;
+        if (occupied > upperBound || occupied > 1024 || empty > 1024) {
+            outOfRange = true;
+        }
+        std::uint64_t value = 0;
+        if (queue->dequeue(value)) {
+            if (value != received) {
+                outOfRange = true;
+            }
+            ++received;
+        }
+    }
+    producer.join();
+
+    EXPECT_FALSE(outOfRange);
+    EXPECT_TRUE(queue->isEmpty());
+    EXPECT_FALSE(queue->isFull());
+    EXPECT_EQ(queue->emptySlots(), 1024U);
+}
+
+// ============================================================================
+// 13. Statistics Sampled From A Third Thread While Workers Run
+// ============================================================================
+TEST(MessageQueueStressTest, StatisticsFromObserverStayWithinCapacity) {
+    // The producer waits for each message to be consumed before sending the next, so the
+    // queue never holds more than one message. An observer racing with both sides still
+    // can't require that tighter bound: the statistics are estimates, and if the observer
+    // is paused between its position loads after exhausting its retries the estimate also
+    // counts the message cycles completed in the meantime. Only the documented capacity
+    // bounds hold under every schedule.
+    constexpr std::size_t Slots = 1024;
+    auto queue = std::make_unique<MessageQueue<Slots, 8>>();
+    std::atomic<bool> stop{false};
+    std::atomic<std::uint64_t> acknowledged{0};
+
+    std::thread consumer([&] {
+        std::uint64_t value = 0;
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (queue->dequeue(value)) {
+                acknowledged.fetch_add(1);
+            }
+        }
+    });
+    std::thread producer([&] {
+        std::uint64_t sent = 0;
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (acknowledged.load() == sent && queue->enqueue(sent)) {
+                ++sent;
+            }
+        }
+    });
+
+    // Keep sampling until enough samples have been taken and enough messages have made the
+    // round trip in the meantime. A fixed number of samples could complete before the workers
+    // run, in which case every sample would describe the initial empty queue.
+    constexpr std::uint64_t MinSamples = 2000000;
+    constexpr std::uint64_t MinRoundTrips = 1000;
+
+    std::size_t maxOccupied = 0;
+    std::size_t maxEmpty = 0;
+    std::uint64_t samples = 0;
+    std::uint64_t roundTrips = 0;
+    const auto acknowledgedAtStart = acknowledged.load();
+    do {
+        for (int i = 0; i < 1000; ++i) {
+            maxOccupied = std::max(maxOccupied, queue->occupiedSlots());
+            maxEmpty = std::max(maxEmpty, queue->emptySlots());
+        }
+        samples += 1000;
+        roundTrips = acknowledged.load() - acknowledgedAtStart;
+    } while (samples < MinSamples || roundTrips < MinRoundTrips);
+
+    stop.store(true);
+    consumer.join();
+    producer.join();
+
+    EXPECT_GE(roundTrips, MinRoundTrips);
+    EXPECT_LE(maxOccupied, Slots);
+    EXPECT_LE(maxEmpty, Slots);
+
+    // With both workers joined the statistics are exact: the producer may have
+    // enqueued one final message that the consumer did not get to.
+    const auto remaining = queue->occupiedSlots();
+    EXPECT_LE(remaining, 1U);
+    EXPECT_EQ(queue->emptySlots(), Slots - remaining);
+    EXPECT_EQ(queue->isEmpty(), remaining == 0);
+    EXPECT_FALSE(queue->isFull());
+}
+
+// ============================================================================
+// 14. Statistics Sampled From A Third Thread While Workers Are Parked
+// ============================================================================
+TEST(MessageQueueStressTest, StatisticsFromObserverAreExactWhenQuiescent) {
+    // The observer drives the workers in lockstep and samples only while both are parked.
+    // Each worker acknowledges its work through a sequentially consistent counter after
+    // touching the queue, so the observer is guaranteed to see the resulting positions and
+    // the statistics must be exact.
+    constexpr std::size_t Slots = 8;
+    constexpr std::uint64_t Rounds = 4000;
+    auto queue = std::make_unique<MessageQueue<Slots, 8>>();
+
+    std::atomic<bool> stop{false};
+    std::atomic<std::uint64_t> produceRequested{0};
+    std::atomic<std::uint64_t> produced{0};
+    std::atomic<std::uint64_t> consumeRequested{0};
+    std::atomic<std::uint64_t> consumed{0};
+    std::atomic<bool> dataMismatch{false};
+
+    std::thread producer([&] {
+        std::uint64_t sent = 0;
+        while (!stop.load()) {
+            if (sent == produceRequested.load()) {
+                std::this_thread::yield();
+                continue;
+            }
+            // The observer never requests more messages than there are empty slots
+            while (!queue->enqueue(sent)) {
+                std::this_thread::yield();
+            }
+            ++sent;
+            produced.store(sent);
+        }
+    });
+    std::thread consumer([&] {
+        std::uint64_t received = 0;
+        while (!stop.load()) {
+            if (received == consumeRequested.load()) {
+                std::this_thread::yield();
+                continue;
+            }
+            std::uint64_t value = 0;
+            while (!queue->dequeue(value)) {
+                std::this_thread::yield();
+            }
+            if (value != received) {
+                dataMismatch.store(true);
+            }
+            ++received;
+            consumed.store(received);
+        }
+    });
+
+    const auto waitFor = [](const std::atomic<std::uint64_t> &counter, std::uint64_t target) {
+        while (counter.load() != target) {
+            std::this_thread::yield();
+        }
+    };
+
+    std::uint64_t totalProduced = 0;
+    std::uint64_t totalConsumed = 0;
+    int mismatches = 0;
+    const auto check = [&](std::size_t expected) {
+        if (queue->occupiedSlots() != expected || queue->emptySlots() != Slots - expected ||
+            queue->isEmpty() != (expected == 0) || queue->isFull() != (expected == Slots)) {
+            ++mismatches;
+        }
+    };
+
+    for (std::uint64_t round = 0; round < Rounds; ++round) {
+        // Cycle through every fill level, including full; the positions
+        // advance by a different amount each round and wrap the slot array
+        const std::size_t batch = 1 + static_cast<std::size_t>(round % Slots);
+
+        totalProduced += batch;
+        produceRequested.store(totalProduced);
+        waitFor(produced, totalProduced);
+        check(batch);
+
+        // Consume part of the batch, then the rest
+        const std::size_t firstHalf = batch / 2;
+        totalConsumed += firstHalf;
+        consumeRequested.store(totalConsumed);
+        waitFor(consumed, totalConsumed);
+        check(batch - firstHalf);
+
+        totalConsumed += batch - firstHalf;
+        consumeRequested.store(totalConsumed);
+        waitFor(consumed, totalConsumed);
+        check(0);
+    }
+
+    stop.store(true);
+    producer.join();
+    consumer.join();
+
+    EXPECT_EQ(mismatches, 0);
+    EXPECT_FALSE(dataMismatch.load());
+    EXPECT_TRUE(queue->isEmpty());
 }
 
 } // namespace mpsc::test

@@ -7,9 +7,12 @@
 
 #include "mpsc/MessageQueue.hpp"
 
-#include <numeric>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <thread>
-#include <vector>
 
 #include <benchmark/benchmark.h>
 
@@ -29,7 +32,9 @@ static_assert(ValueLike<SampleEvent>);
 // Measures the pure overhead of the enqueue/dequeue logic without contention.
 static void BM_SingleThreaded_RawBytes(benchmark::State &state) {
     // 1024 slots, 64-byte slot capacity
-    mpsc::MessageQueue<1024, 64> queue;
+    // Heap allocated: the slots are stored inline and this queue is ~80 KB
+    auto queuePtr = std::make_unique<mpsc::MessageQueue<1024, 64>>();
+    auto &queue = *queuePtr;
 
     std::array<unsigned char, 16> writeBuffer;
     writeBuffer.fill(0xAA);
@@ -38,8 +43,9 @@ static void BM_SingleThreaded_RawBytes(benchmark::State &state) {
 
     for (auto _ : state) {
         // Enqueue and immediately dequeue to prevent filling up the queue
-        queue.enqueue(writeBuffer);
-        queue.dequeue(readBuffer, bytesWritten);
+        benchmark::DoNotOptimize(queue.enqueue(writeBuffer));
+        benchmark::DoNotOptimize(queue.dequeue(readBuffer, bytesWritten));
+        benchmark::DoNotOptimize(readBuffer);
     }
 
     // Track total processed items per second
@@ -48,12 +54,14 @@ static void BM_SingleThreaded_RawBytes(benchmark::State &state) {
 BENCHMARK(BM_SingleThreaded_RawBytes);
 
 static void BM_SingleThreaded_Values(benchmark::State &state) {
-    mpsc::MessageQueue<1024, 64> queue;
+    auto queuePtr = std::make_unique<mpsc::MessageQueue<1024, 64>>();
+    auto &queue = *queuePtr;
     SampleEvent event{123456789ULL, 42, 0};
 
     for (auto _ : state) {
-        queue.enqueue(event);
-        queue.dequeue(event);
+        benchmark::DoNotOptimize(queue.enqueue(event));
+        benchmark::DoNotOptimize(queue.dequeue(event));
+        benchmark::DoNotOptimize(event);
     }
     state.SetItemsProcessed(state.iterations() * 2);
 }

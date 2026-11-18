@@ -27,9 +27,9 @@ install(EXPORT CXXMessageQueueTargets
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CXXMessageQueue
 )
 
-option(CXXMessageQueue_BUILD_TESTING "Build the CXXMessageQueue tests" ${PROJECT_IS_TOP_LEVEL})
+option(CXXMESSAGEQUEUE_BUILD_TESTING "Build the CXXMessageQueue tests" ${PROJECT_IS_TOP_LEVEL})
 
-if(CXXMessageQueue_BUILD_TESTING)
+if(CXXMESSAGEQUEUE_BUILD_TESTING)
     find_package(GTest REQUIRED)
 
     enable_testing()
@@ -52,9 +52,9 @@ if(CXXMessageQueue_BUILD_TESTING)
     gtest_discover_tests(run_tests)
 endif()
 
-option(CXXMessageQueue_BUILD_BENCHMARK "Build the CXXMessageQueue benchmark" off)
+option(CXXMESSAGEQUEUE_BUILD_BENCHMARK "Build the CXXMessageQueue benchmark" off)
 
-if(CXXMessageQueue_BUILD_BENCHMARK)
+if(CXXMESSAGEQUEUE_BUILD_BENCHMARK)
     find_package(benchmark REQUIRED)
 
     add_executable(benchmark test/message_queue_benchmark.cpp)

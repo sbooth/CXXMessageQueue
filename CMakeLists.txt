@@ -52,7 +52,7 @@ if(CXXMESSAGEQUEUE_BUILD_TESTING)
     gtest_discover_tests(run_tests)
 endif()
 
-option(CXXMESSAGEQUEUE_BUILD_BENCHMARK "Build the CXXMessageQueue benchmark" off)
+option(CXXMESSAGEQUEUE_BUILD_BENCHMARK "Build the CXXMessageQueue benchmark" OFF)
 
 if(CXXMESSAGEQUEUE_BUILD_BENCHMARK)
     find_package(benchmark REQUIRED)
